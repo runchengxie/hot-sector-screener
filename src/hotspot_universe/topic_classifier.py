@@ -225,14 +225,18 @@ class TopicClassifier:
         topics: list[dict[str, Any]] = []
         seen: set[str] = set()
 
-        # From dc_concepts
+        # From dc_concepts — compute max strength for normalization
+        strengths = [float(c.get("strength", 0)) for c in dc_concepts if c.get("strength")]
+        max_strength = max(strengths) if strengths else 1.0
+
         for c in dc_concepts[:5]:
             name = c.get("name", "")
             if name and name not in seen:
                 seen.add(name)
+                raw_strength = float(c.get("strength", 0))
                 topics.append({
                     "topic": name,
-                    "weight": float(c.get("strength", 0.5)) / 10.0,
+                    "weight": round(min(raw_strength / max_strength, 1.0), 3),
                     "reasoning": f"概念板块 {name} 今日领涨",
                     "related_concepts": [name],
                     "source_signals": ["dc_concept"],

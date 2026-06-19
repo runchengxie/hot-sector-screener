@@ -23,24 +23,47 @@ class StockMapper:
     Mapping logic:
       1. Topic → related concept/theme names
       2. Concept/theme → constituent stocks (from dc_concept_cons / kpl_concept_cons)
-      3. Topic → ETF → constituent stocks (when concept mapping doesn't cover)
-      4. Deduplicate and score by relevance
+      3. Deduplicate and score by relevance
     """
 
-    def __init__(self, dc_cons_df: pd.DataFrame, kpl_cons_df: pd.DataFrame | None = None):
+    def __init__(
+        self,
+        dc_cons_df: pd.DataFrame,
+        kpl_cons_df: pd.DataFrame | None = None,
+        dc_concept_df: pd.DataFrame | None = None,
+    ):
         self.dc_cons = dc_cons_df
         self.kpl_cons = kpl_cons_df if kpl_cons_df is not None else pd.DataFrame()
+        self.dc_concept = dc_concept_df if dc_concept_df is not None else pd.DataFrame()
 
-        # Build lookup: concept name → set of ts_code
-        self._dc_lookup: dict[str, set[str]] = {}
+        # Build lookup: theme_code → set of ts_code
+        self._dc_code_lookup: dict[str, set[str]] = {}
         if not self.dc_cons.empty and "theme_code" in self.dc_cons.columns:
             for _, row in self.dc_cons.iterrows():
                 key = str(row.get("theme_code", "")).strip()
                 code = _normalize_ts_code(str(row.get("ts_code", "")))
                 if key and code:
-                    self._dc_lookup.setdefault(key, set()).add(code)
+                    self._dc_code_lookup.setdefault(key, set()).add(code)
 
-        # Also build lookup from kpl: con_name → set of ts_code
+        # Build lookup: concept name → set of ts_code
+        # Use dc_concept (which has name + theme_code) to bridge
+        self._dc_name_lookup: dict[str, set[str]] = {}
+        if not self.dc_concept.empty and "name" in self.dc_concept.columns:
+            for _, row in self.dc_concept.iterrows():
+                name = str(row.get("name", "")).strip()
+                theme_code = str(row.get("theme_code", "")).strip()
+                if name and theme_code and theme_code in self._dc_code_lookup:
+                    self._dc_name_lookup[name] = self._dc_code_lookup[theme_code]
+
+        # Also try name matching directly from dc_cons
+        if not self.dc_cons.empty and "name" in self.dc_cons.columns:
+            for _, row in self.dc_cons.iterrows():
+                name = str(row.get("name", "")).strip()
+                code = _normalize_ts_code(str(row.get("ts_code", "")))
+                if name and code:
+                    self._dc_name_lookup.setdefault(name, set()).add(code)
+
+        # Build lookup from kpl: con_name → set of ts_code
         self._kpl_lookup: dict[str, set[str]] = {}
         if not self.kpl_cons.empty and "con_code" in self.kpl_cons.columns:
             for _, row in self.kpl_cons.iterrows():
@@ -48,6 +71,34 @@ class StockMapper:
                 code = _normalize_ts_code(str(row.get("ts_code", "")))
                 if key and code:
                     self._kpl_lookup.setdefault(key, set()).add(code)
+
+    def _match_concept(self, concept_name: str) -> set[str]:
+        """Match a concept name against all lookups, return matching ts_codes."""
+        results: set[str] = set()
+
+        # 1. Try exact match in dc_name_lookup
+        if concept_name in self._dc_name_lookup:
+            results |= self._dc_name_lookup[concept_name]
+
+        # 2. Try fuzzy match in dc_name_lookup keys
+        for name, codes in self._dc_name_lookup.items():
+            if concept_name.lower() in name.lower() or name.lower() in concept_name.lower():
+                results |= codes
+
+        # 3. Try exact match in dc_code_lookup
+        concept_upper = concept_name.upper().replace(" ", "_").replace("-", "_")
+        for code_key, codes in self._dc_code_lookup.items():
+            if concept_upper == code_key.upper():
+                results |= codes
+
+        # 4. Try kpl
+        if concept_name in self._kpl_lookup:
+            results |= self._kpl_lookup[concept_name]
+        for kpl_key, codes in self._kpl_lookup.items():
+            if concept_name.lower() in kpl_key.lower() or kpl_key.lower() in concept_name.lower():
+                results |= codes
+
+        return results
 
     def map_topic_to_stocks(
         self,
@@ -62,40 +113,27 @@ class StockMapper:
         topic_name = topic.get("topic", "")
         candidates: dict[str, float] = {}
 
-        # 1. Match via related_concepts against dc_concept_cons
+        # 1. Match via related_concepts against dc_concept_cons + kpl_concept_cons
         for concept in related_concepts:
-            # Try exact match in dc_lookup keys
-            matched = False
-            for dc_key, codes in self._dc_lookup.items():
-                if concept.lower() in dc_key.lower():
-                    for code in codes:
-                        candidates[code] = candidates.get(code, 0.0) + 1.0
-                    matched = True
-            # Also try kpl lookup
-            for kpl_key, codes in self._kpl_lookup.items():
-                if concept.lower() in kpl_key.lower():
-                    for code in codes:
-                        candidates[code] = candidates.get(code, 0.0) + 0.8
-                    matched = True
+            codes = self._match_concept(concept)
+            for code in codes:
+                candidates[code] = candidates.get(code, 0.0) + 1.0
 
-            if not matched:
-                # Try matching concept name directly against stock concept field
-                # in dc_cons (the 'industry' or 'name' fields may contain concept name)
-                if not self.dc_cons.empty and "name" in self.dc_cons.columns:
-                    match_mask = self.dc_cons["name"].str.contains(
-                        concept, case=False, na=False
-                    )
-                    for _, row in self.dc_cons[match_mask].iterrows():
-                        code = _normalize_ts_code(str(row.get("ts_code", "")))
-                        if code:
-                            candidates[code] = candidates.get(code, 0.0) + 0.5
+            # Also try matching stock names directly (fallback for broad terms)
+            if not codes and not self.dc_cons.empty and "name" in self.dc_cons.columns:
+                match_mask = self.dc_cons["name"].str.contains(
+                    concept, case=False, na=False
+                )
+                for _, row in self.dc_cons[match_mask].iterrows():
+                    code = _normalize_ts_code(str(row.get("ts_code", "")))
+                    if code:
+                        candidates[code] = candidates.get(code, 0.0) + 0.5
 
-        # 2. If topic_name matches a concept directly
+        # 2. If topic_name matches a concept directly (and wasn't already in related_concepts)
         if topic_name and topic_name not in related_concepts:
-            for dc_key, codes in self._dc_lookup.items():
-                if topic_name.lower() in dc_key.lower():
-                    for code in codes:
-                        candidates[code] = candidates.get(code, 0.0) + 1.2
+            codes = self._match_concept(topic_name)
+            for code in codes:
+                candidates[code] = candidates.get(code, 0.0) + 1.2
 
         # 3. If no concept mapping was found, use kpl descriptions
         if not candidates and not self.kpl_cons.empty and "desc" in self.kpl_cons.columns:

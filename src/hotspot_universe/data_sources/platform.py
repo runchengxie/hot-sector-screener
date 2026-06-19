@@ -17,12 +17,38 @@ def _resolve_platform_root() -> Path:
     return Path(root).expanduser().resolve()
 
 
+def _resolve_latest_data_dir(base_dir: Path) -> Path | None:
+    """Resolve the actual data directory containing Hive partitions.
+
+    Handles the market-data-platform convention:
+      <source>/a_share_all_<source>_latest/data/
+    """
+    if not base_dir.is_dir():
+        return None
+    # Find the latest subdirectory (there should be only one: a_share_all_*_latest)
+    subdirs = [d for d in base_dir.iterdir() if d.is_dir()]
+    if not subdirs:
+        return None
+    # Pick the first (should be the latest)
+    latest = sorted(subdirs)[-1]
+    data_dir = latest / "data"
+    return data_dir if data_dir.is_dir() else latest
+
+
 def _load_hive_partitioned(
-    parquet_dir: Path, trade_date: str, columns: list[str] | None = None
+    base_dir: Path, trade_date: str, columns: list[str] | None = None
 ) -> pd.DataFrame:
-    """Load one Hive partition: parquet_dir/trade_date=YYYYMMDD/*.parquet."""
+    """Load one Hive partition from a market-data-platform source directory.
+
+    Handles the convention:
+      <base_dir>/a_share_all_<name>_latest/data/trade_date=YYYYMMDD/*.parquet
+    """
+    data_dir = _resolve_latest_data_dir(base_dir)
+    if data_dir is None:
+        return pd.DataFrame()
+
     date_clean = trade_date.replace("-", "")
-    partition_dir = parquet_dir / f"trade_date={date_clean}"
+    partition_dir = data_dir / f"trade_date={date_clean}"
     if not partition_dir.is_dir():
         return pd.DataFrame()
     try:
@@ -136,8 +162,11 @@ def list_available_dates(source: str = "ths_hot") -> list[str]:
     source_dir = source_map.get(source)
     if source_dir is None or not source_dir.is_dir():
         return []
+    data_dir = _resolve_latest_data_dir(source_dir)
+    if data_dir is None or not data_dir.is_dir():
+        return []
     dates: list[str] = []
-    for entry in source_dir.iterdir():
+    for entry in data_dir.iterdir():
         if entry.name.startswith("trade_date="):
             dates.append(entry.name.split("=", 1)[1])
     return sorted(dates)

@@ -122,7 +122,7 @@ class HotspotUniverseBuilder:
         )
 
         # 3. Map topics → stocks
-        mapper = StockMapper(dc_cons, kpl_cons)
+        mapper = StockMapper(dc_cons, kpl_cons, dc_concept_df=dc)
         raw_stocks = mapper.map_topics(
             topics,
             max_stocks_per_topic=self.stocks_per_topic,

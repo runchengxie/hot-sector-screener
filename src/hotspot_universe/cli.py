@@ -79,8 +79,8 @@ def cmd_scan(args: argparse.Namespace) -> None:
         print(f"  {'排名':>4s} {'代码':<12s} {'名称':<10s} {'热度':>6s} {'概念'}")
         print(f"  {'-'*60}")
         for s in ths:
-            print(f"  {s.get('rank', ''):>4s} {s.get('ts_code', ''):<12s} "
-                  f"{s.get('ts_name', ''):<10s} {s.get('hot', ''):>6s} "
+            print(f"  {str(s.get('rank', '')):>4s} {str(s.get('ts_code', '')):<12s} "
+                  f"{str(s.get('ts_name', '')):<10s} {str(s.get('hot', '')):>6s} "
                   f"{s.get('concept', '')[:30]}")
 
 
@@ -121,8 +121,8 @@ def cmd_run(args: argparse.Namespace) -> None:
     print(f"  {'-'*60}")
     for s in universe[:args.limit if hasattr(args, "limit") else 20]:
         topics_str = ", ".join(s.get("source_topics", []))[:30]
-        print(f"  {s.get('ts_code', ''):<12s} {s.get('name', ''):<10s} "
-              f"{s.get('relevance', 0):>8.3f}  {topics_str}")
+        print(f"  {str(s.get('ts_code', '')):<12s} {str(s.get('name', '')):<10s} "
+              f"{float(s.get('relevance', 0)):>8.3f}  {topics_str}")
 
     print(f"\n  输出目录: {result.get('output_dir', 'N/A')}")
 
@@ -164,8 +164,8 @@ def cmd_universe(args: argparse.Namespace) -> None:
         print(f"  {'-'*60}")
         for s in universe[:args.limit]:
             topics_str = ", ".join(s.get("source_topics", []))[:30]
-            print(f"  {s.get('ts_code', ''):<12s} {s.get('name', ''):<10s} "
-                  f"{s.get('relevance', 0):>8.3f}  {topics_str}")
+            print(f"  {str(s.get('ts_code', '')):<12s} {str(s.get('name', '')):<10s} "
+                  f"{float(s.get('relevance', 0)):>8.3f}  {topics_str}")
 
         # Also show topics
         topics = data.get("topics", [])
