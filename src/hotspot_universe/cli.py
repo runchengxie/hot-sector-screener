@@ -32,12 +32,21 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--output-dir", default=None, help="Custom output directory")
     run.add_argument("--max-candidates", type=int, default=None, help="Override max candidates")
     run.add_argument("--stocks-per-topic", type=int, default=None, help="Override stocks per topic")
+    run.add_argument("--load-topics", default=None, help="Path to topics JSON file (skip LLM, use pre-classified topics)")
 
     # universe — list latest or specific output
     universe = sub.add_parser("universe", help="Show candidate universe output")
     universe.add_argument("--date", default=None, help="Output date to show")
     universe.add_argument("--csv", action="store_true", help="Output as CSV")
     universe.add_argument("--limit", type=int, default=30, help="Max stocks to display")
+
+    # build-prompt — collect data and write LLM prompt to file (no LLM call)
+    bp = sub.add_parser("build-prompt", help="Collect hotspot data and write LLM prompt to file")
+    bp.add_argument("--date", default=None, help="Trade date (YYYY-MM-DD or YYYYMMDD)")
+    bp.add_argument("--config", default=None, help="Config YAML path")
+    bp.add_argument("--out-prompt", default="hotspot_prompt.txt", help="Output prompt file path")
+    bp.add_argument("--stock-limit", type=int, default=30, help="Max hot stocks in prompt")
+    bp.add_argument("--concept-limit", type=int, default=20, help="Max concepts in prompt")
 
     return parser
 
@@ -97,9 +106,24 @@ def cmd_run(args: argparse.Namespace) -> None:
         config.setdefault("universe", {})["stocks_per_topic"] = args.stocks_per_topic
 
     builder = HotspotUniverseBuilder(config)
+
+    # Load pre-classified topics if --load-topics given
+    pre_classified = None
+    if args.load_topics:
+        topics_path = Path(args.load_topics)
+        if not topics_path.exists():
+            print(f"ERROR: topics file not found: {topics_path}")
+            sys.exit(1)
+        with open(topics_path) as f:
+            pre_classified = json.load(f)
+        print(f"  加载预分类主题 ({len(pre_classified)} 个):")
+        for t in pre_classified:
+            print(f"    {t.get('topic', ''):<25s} w={t.get('weight', 0):.2f}")
+
     result = builder.build_universe(
         trade_date=args.date,
         output_dir=args.output_dir,
+        topics=pre_classified,
     )
 
     print(f"\n  运行日期: {result['date']}")
@@ -176,6 +200,31 @@ def cmd_universe(args: argparse.Namespace) -> None:
                       f"{t.get('reasoning', '')}")
 
 
+def cmd_build_prompt(args: argparse.Namespace) -> None:
+    """Collect hotspot data and write LLM prompt to file."""
+    config = _resolve_config(args.config)
+    builder = HotspotUniverseBuilder(config)
+    result = builder.build_prompt(
+        trade_date=args.date,
+        stock_limit=args.stock_limit,
+        concept_limit=args.concept_limit,
+    )
+
+    out_path = Path(args.out_prompt)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(result["prompt"], encoding="utf-8")
+
+    print(f"\n  Prompt 已写入: {out_path.resolve()}")
+    print(f"  日期:         {result['date']}")
+    print(f"  热股数:       {result['stock_count']}")
+    print(f"  概念板块数:   {result['concept_count']}")
+    print(f"  提示词长度:   {result['prompt_length']} 字符")
+    print(f"  行业信号:     {'有' if result['industry_signal_available'] else '无'}")
+    print()
+    print(f"  下一步: 读取 prompt 文件，做主题分类，输出 topics.json，然后运行:")
+    print(f"    hotspot run --date {result['date_int']} --load-topics topics.json")
+
+
 def _resolve_config(config_arg: str | None) -> dict:
     if config_arg:
         return load_config(config_arg)
@@ -201,6 +250,7 @@ def main() -> None:
         "scan": cmd_scan,
         "run": cmd_run,
         "universe": cmd_universe,
+        "build-prompt": cmd_build_prompt,
     }
 
     handler = commands.get(args.command)

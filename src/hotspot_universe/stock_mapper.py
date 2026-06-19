@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Any
 
 import pandas as pd
@@ -122,7 +123,7 @@ class StockMapper:
             # Also try matching stock names directly (fallback for broad terms)
             if not codes and not self.dc_cons.empty and "name" in self.dc_cons.columns:
                 match_mask = self.dc_cons["name"].str.contains(
-                    concept, case=False, na=False
+                    re.escape(concept), case=False, na=False
                 )
                 for _, row in self.dc_cons[match_mask].iterrows():
                     code = _normalize_ts_code(str(row.get("ts_code", "")))
@@ -138,7 +139,7 @@ class StockMapper:
         # 3. If no concept mapping was found, use kpl descriptions
         if not candidates and not self.kpl_cons.empty and "desc" in self.kpl_cons.columns:
             match_mask = self.kpl_cons["desc"].str.contains(
-                topic_name, case=False, na=False
+                re.escape(topic_name), case=False, na=False
             )
             if match_mask.any():
                 for _, row in self.kpl_cons[match_mask].iterrows():

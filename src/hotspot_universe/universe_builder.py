@@ -18,7 +18,7 @@ from .data_sources.platform import (
 from .data_sources.rotation_signal import load_industry_signal
 from .paths import ensure_output_dir
 from .stock_mapper import StockMapper, apply_liquidity_filter
-from .topic_classifier import TopicClassifier
+from .topic_classifier import TopicClassifier, build_topic_prompt
 
 
 def _fmt_date(d: str | None) -> str:
@@ -93,12 +93,54 @@ class HotspotUniverseBuilder:
             },
         }
 
+    def build_prompt(
+        self,
+        trade_date: str | None = None,
+        stock_limit: int = 30,
+        concept_limit: int = 20,
+    ) -> dict[str, Any]:
+        """Collect hotspot data and build the LLM prompt (no LLM call).
+
+        Returns dict with prompt text and data summary.
+        """
+        date_int = _fmt_date(trade_date)
+        date_str = f"{date_int[:4]}-{date_int[4:6]}-{date_int[6:]}"
+
+        ths = load_ths_hot(date_str, limit=stock_limit)
+        dc = load_dc_concept(date_str)
+        ind_signal = load_industry_signal()
+
+        ths_stocks = _df_to_dicts(ths)
+        dc_list = _df_to_dicts(dc)
+        ind_list = _df_to_dicts(ind_signal) if not ind_signal.empty else None
+
+        prompt = build_topic_prompt(
+            ths_hot_stocks=ths_stocks,
+            dc_concepts=dc_list[:concept_limit],
+            industry_signals=ind_list,
+            latest_date=date_str,
+        )
+
+        return {
+            "date": date_str,
+            "date_int": date_int,
+            "prompt": prompt,
+            "prompt_length": len(prompt),
+            "stock_count": len(ths_stocks),
+            "concept_count": len(dc_list),
+            "industry_signal_available": ind_list is not None,
+        }
+
     def build_universe(
         self,
         trade_date: str | None = None,
         output_dir: str | None = None,
+        topics: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
-        """Run the full pipeline: collect → classify → map → output."""
+        """Run the full pipeline: collect → classify → map → output.
+
+        If `topics` is provided, skips the LLM classification step entirely.
+        """
         date_int = _fmt_date(trade_date)
         date_str = f"{date_int[:4]}-{date_int[4:6]}-{date_int[6:]}"
 
@@ -109,17 +151,21 @@ class HotspotUniverseBuilder:
         kpl_cons = load_kpl_concept_cons(date_str)
         ind_signal = load_industry_signal()
 
-        # 2. Classify topics
+        # 2. Classify topics (or use pre-classified)
         ths_stocks = _df_to_dicts(ths)
         dc_list = _df_to_dicts(dc)
         ind_list = _df_to_dicts(ind_signal) if not ind_signal.empty else None
 
-        topics = self.classifier.classify(
-            ths_hot_stocks=ths_stocks,
-            dc_concepts=dc_list,
-            industry_signals=ind_list,
-            latest_date=date_str,
-        )
+        if topics is not None:
+            # Use pre-classified topics loaded from file
+            pass  # topics already set
+        else:
+            topics = self.classifier.classify(
+                ths_hot_stocks=ths_stocks,
+                dc_concepts=dc_list,
+                industry_signals=ind_list,
+                latest_date=date_str,
+            )
 
         # 3. Map topics → stocks
         mapper = StockMapper(dc_cons, kpl_cons, dc_concept_df=dc)
