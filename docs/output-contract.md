@@ -1,0 +1,98 @@
+# 输出契约
+
+每次执行 `hotsector run` 后，候选池输出到 `outputs/<YYYYMMDD>/` 目录下，包含以下文件：
+
+## candidate_universe.json
+
+完整输出结果，包含主题空间、候选股票列表以及运行元信息。
+
+```json
+{
+  "date": "2026-06-19",
+  "date_int": "20260619",
+  "generated_at": "2026-06-19T08:30:00",
+  "topics": [
+    {
+      "topic": "AI医疗",
+      "weight": 0.32,
+      "reasoning": "同花顺热榜 5 只 AI 医疗相关股票上榜",
+      "related_concepts": ["AI医疗", "互联网医疗"],
+      "source_signals": ["ths_hot"]
+    }
+  ],
+  "candidate_universe": [
+    {
+      "ts_code": "300308.SZ",
+      "name": "中际旭创",
+      "relevance": 0.95,
+      "source_topics": ["CPO光通信"]
+    }
+  ],
+  "universe_size": 85,
+  "config_snapshot": {
+    "max_candidates": 100,
+    "min_candidates": 30,
+    "llm_enabled": true
+  },
+  "data_sources": {
+    "ths_hot_available": true,
+    "dc_concept_available": true,
+    "dc_concept_cons_available": true,
+    "kpl_concept_cons_available": true,
+    "industry_signal_available": false
+  },
+  "output_dir": "/home/richard/code/hot-sector-screener/outputs/20260619"
+}
+```
+
+### 字段说明
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `date` | string | 交易日（yyyy-MM-dd 格式） |
+| `date_int` | string | 交易日（yyyyMMdd 格式，用于目录路径） |
+| `generated_at` | string | 生成时间戳 |
+| `topics` | array | LLM 识别的当日主题空间，每个主题包含名称、权重、来源信号等 |
+| `candidate_universe` | array | 候选股票列表 |
+| `universe_size` | int | 候选池股票数量，通常在 50-100 只之间 |
+| `config_snapshot` | object | 运行时的配置快照 |
+| `data_sources` | object | 各数据源可用性标记 |
+
+### 候选股票字段
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `ts_code` | string | 股票代码，例如 `300308.SZ` |
+| `name` | string | 股票名称 |
+| `relevance` | float | 与主题的相关性得分，0-1 之间 |
+| `source_topics` | array | 该股票匹配到的主题列表 |
+
+## candidate_universe.csv
+
+候选股票的表格化输出，仅包含 `candidate_universe` 数组中的字段。适合直接导入其他工具或 Excel 查看。
+
+## lineage.json
+
+数据溯源文件，记录每次运行的输入来源和产出结果之间的对应关系。
+
+```json
+{
+  "date": "2026-06-19",
+  "generated_at": "2026-06-19T08:30:00",
+  "run_config": "run_config.json",
+  "data_sources": {
+    "ths_hot_available": true,
+    ...
+  },
+  "topics_count": 4,
+  "universe_size": 85,
+  "output_files": {
+    "json": "outputs/20260619/candidate_universe.json",
+    "csv": "outputs/20260619/candidate_universe.csv"
+  }
+}
+```
+
+## run_config.json
+
+运行时使用的完整配置快照，内容来自 `configs/default.yml` 或 `--config` 指定的配置文件。用于复现或回溯分析。
