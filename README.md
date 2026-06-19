@@ -67,3 +67,4 @@ hot-sector-screener/
 - [命令详解](docs/commands.md) — 全部 5 个子命令和参数说明
 - [配置项参考](docs/configuration.md) — 配置文件各字段含义
 - [输出格式说明](docs/output-contract.md) — 输出文件的 JSON 结构和字段
+- [回测脚本](docs/backtests.md) — 两个独立的回测脚本说明
