@@ -1,0 +1,32 @@
+# hotspot-universe default config
+# Copy to configs/default.yml and modify as needed.
+
+market: a_share
+
+hotspot_sources:
+  - ths_hot
+  - dc_concept
+  - kpl_concept
+
+llm:
+  enabled: true
+  model: deepseek-reasoner
+  provider: deepseek
+  prompt_template: default
+
+universe:
+  max_candidates: 100
+  min_candidates: 30
+  min_daily_amount_rank_pct: 80
+  max_price: 200.0
+  min_price: 2.0
+  max_st_allow: false
+  topics_per_run: 5
+  stocks_per_topic: 25
+
+output:
+  format: csv
+  publish: false
+
+# Optional: path to rotation-v3 industry-signal output
+# rotation_signal_dir: /home/richard/data/market-data-platform/strategy_outputs/etf_rotation_v3/latest

@@ -1,0 +1,2 @@
+[console_scripts]
+hotspot = hotspot_universe.cli:main

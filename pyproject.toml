@@ -1,0 +1,66 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hotspot-universe"
+version = "0.1.0"
+description = "A-share hotspot-driven universe builder. Reads data lake signals (ths_hot, ETF rotation, concept constituents) and outputs a daily 50-100 stock watchlist for cross-sectional ranking."
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [
+  { name = "Richard" },
+]
+keywords = ["quant", "a-share", "hotspot", "universe", "trading"]
+dependencies = [
+  "numpy>=1.26",
+  "pandas>=2.2",
+  "PyYAML>=6.0",
+  "polars>=1.6",
+  "tqdm>=4.66",
+  "python-dateutil>=2.8",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.3",
+  "pyright>=1.1.394",
+  "ruff>=0.8.0",
+  "pyarrow>=14.0",
+]
+# LLM-based topic classification requires `hermes-tools` (built-in to Hermes Agent)
+# For standalone use, install with: pip install openai
+
+[project.scripts]
+hotspot = "hotspot_universe.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+addopts = "-ra"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+fixable = ["I"]
+
+[tool.ruff.format]
+line-ending = "lf"
+quote-style = "double"
+
+[tool.pyright]
+include = ["src"]
+exclude = ["**/.venv", "outputs", "data"]
+pythonVersion = "3.10"
+pythonPlatform = "All"
+typeCheckingMode = "basic"
+venvPath = "."
+venv = ".venv"
