@@ -7,7 +7,7 @@ import yaml
 
 
 def load_config(config_path: str | Path) -> dict[str, Any]:
-    """Load a hotspot-universe experiment config YAML."""
+    """Load a hot-sector-screener experiment config YAML."""
     resolved = Path(config_path).expanduser()
     if not resolved.is_absolute():
         resolved = (Path.cwd() / resolved).resolve()

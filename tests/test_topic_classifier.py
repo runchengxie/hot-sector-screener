@@ -1,6 +1,7 @@
+"""Tests for the topic classifier."""
 from __future__ import annotations
 
-from hotspot_universe.topic_classifier import build_topic_prompt, parse_topic_response
+from hot_sector_screener.topic_classifier import build_topic_prompt, parse_topic_response
 
 
 class TestTopicClassifier:

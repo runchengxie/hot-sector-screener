@@ -3,15 +3,15 @@ requires = ["setuptools>=69", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "hotspot-universe"
+name = "hot-sector-screener"
 version = "0.1.0"
-description = "A-share hotspot-driven universe builder. Reads data lake signals (ths_hot, ETF rotation, concept constituents) and outputs a daily 50-100 stock watchlist for cross-sectional ranking."
+description = "A-share hot-sector candidate pool screener. Reads data lake signals (ths_hot, ETF rotation, concept constituents) and outputs a daily 50-100 stock watchlist for cross-sectional ranking."
 readme = "README.md"
 requires-python = ">=3.10"
 authors = [
   { name = "Richard" },
 ]
-keywords = ["quant", "a-share", "hotspot", "universe", "trading"]
+keywords = ["quant", "a-share", "hot-sector", "screener", "trading"]
 dependencies = [
   "numpy>=1.26",
   "pandas>=2.2",
@@ -32,7 +32,7 @@ dev = [
 # For standalone use, install with: pip install openai
 
 [project.scripts]
-hotspot = "hotspot_universe.cli:main"
+hotsector = "hot_sector_screener.cli:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}

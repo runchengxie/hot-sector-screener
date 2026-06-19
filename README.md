@@ -1,6 +1,6 @@
-# hotspot-universe
+# hot-sector-screener
 
-A-share 热点驱动选股池构建器。每天开盘前，根据数据湖中的同花顺热榜、东财概念、开盘啦概念、ETF 轮动信号，生成 50-100 只股票盯盘池，供 cross-sectional ranking 进一步排序。
+A-share 热点题材候选池筛选器。每天开盘前，根据数据湖中的同花顺热榜、东财概念、开盘啦概念、ETF 轮动信号，生成 50-100 只股票盯盘池，供 cross-sectional ranking 进一步排序。
 
 ## 设计原则
 
@@ -11,7 +11,7 @@ A-share 热点驱动选股池构建器。每天开盘前，根据数据湖中的
 ## 架构
 
 ```
-Layer B: Hotspot + Universe (本 repo)
+Layer B: Hot Sector Screener (本 repo)
 
 Data Collection:
   ths_hot (同花顺热榜)
@@ -34,7 +34,7 @@ Deterministic Mapping:
 
     ↓
 
-Universe Output:
+Screener Output:
   candidate_universe (50-100 stocks + topic metadata)
 ```
 
@@ -53,25 +53,25 @@ export DATA_PLATFORM_ROOT=/home/richard/data/market-data-platform
 查看可用的热点数据范围：
 
 ```bash
-uv run hotspot info
+uv run hotsector info
 ```
 
 运行一次预市热点检查（不调用 LLM，只收集数据）：
 
 ```bash
-uv run hotspot scan
+uv run hotsector scan
 ```
 
 完整跑一次（收集数据 → LLM 分类 → 生成候选池）：
 
 ```bash
-uv run hotspot run --date 2026-06-19
+uv run hotsector run --date 2026-06-19
 ```
 
 只看候选池输出：
 
 ```bash
-uv run hotspot universe --date 2026-06-19
+uv run hotsector universe --date 2026-06-19
 ```
 
 ## 输出契约
@@ -88,11 +88,11 @@ uv run hotspot universe --date 2026-06-19
 ## 与 rotation-v3 的关系
 
 ```
-rotation-v3                           hotspot-universe
-  ┌──────────────┐                      ┌──────────────────┐
-  │ ETF rotation  │ ──industry-signal──▶ │ 行业信号作为      │
-  │ signal       │                      │ regime indicator  │
-  └──────────────┘                      └──────────────────┘
+rotation-v3                           hot-sector-screener
+  ┌──────────────┐                      ┌─────────────────────┐
+  │ ETF rotation  │ ──industry-signal──▶ │ 行业信号作为          │
+  │ signal       │                      │ regime indicator     │
+  └──────────────┘                      └─────────────────────┘
                                                    │
                                         DATA_PLATFORM_ROOT
                                                    │

@@ -33,7 +33,7 @@ def _df_to_dicts(df: pd.DataFrame) -> list[dict[str, Any]]:
     return df.fillna("").to_dict(orient="records")
 
 
-class HotspotUniverseBuilder:
+class Screener:
     """Main builder: collect data → classify topics → map stocks → output universe."""
 
     def __init__(self, config: dict[str, Any] | None = None):

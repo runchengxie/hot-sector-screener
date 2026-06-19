@@ -1,7 +1,7 @@
 """Tests for the universe builder."""
 from __future__ import annotations
 
-from hotspot_universe.config import default_config
+from hot_sector_screener.config import default_config
 
 
 class TestConfig:

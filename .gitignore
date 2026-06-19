@@ -5,4 +5,5 @@ __pycache__/
 .ruff_cache/
 outputs/
 .tmp/
-.hotspot_universe_local/
+.hot_sector_screener_local/
+*.egg-info/

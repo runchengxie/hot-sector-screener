@@ -3,7 +3,7 @@ from __future__ import annotations
 import pandas as pd
 import pytest
 
-from hotspot_universe.stock_mapper import StockMapper, apply_liquidity_filter
+from hot_sector_screener.stock_mapper import StockMapper, apply_liquidity_filter
 
 
 class TestStockMapper:

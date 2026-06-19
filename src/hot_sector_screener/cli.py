@@ -8,11 +8,11 @@ from pathlib import Path
 from .config import default_config, load_config
 from .data_sources.platform import list_available_dates, summarize_data_coverage
 from .paths import OUTPUTS_DIR
-from .universe_builder import HotspotUniverseBuilder
+from .universe_builder import Screener
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="hotspot")
+    parser = argparse.ArgumentParser(prog="hotsector")
     sub = parser.add_subparsers(dest="command", required=True)
 
     # info — show data coverage
@@ -69,7 +69,7 @@ def cmd_info(args: argparse.Namespace) -> None:
 def cmd_scan(args: argparse.Namespace) -> None:
     """Collect hotspot data without LLM."""
     config = _resolve_config(args.config)
-    builder = HotspotUniverseBuilder(config)
+    builder = Screener(config)
     result = builder.scan(trade_date=args.date)
 
     print(f"\n  扫描日期: {result['date']}")
@@ -105,7 +105,7 @@ def cmd_run(args: argparse.Namespace) -> None:
     if args.stocks_per_topic is not None:
         config.setdefault("universe", {})["stocks_per_topic"] = args.stocks_per_topic
 
-    builder = HotspotUniverseBuilder(config)
+    builder = Screener(config)
 
     # Load pre-classified topics if --load-topics given
     pre_classified = None
@@ -203,7 +203,7 @@ def cmd_universe(args: argparse.Namespace) -> None:
 def cmd_build_prompt(args: argparse.Namespace) -> None:
     """Collect hotspot data and write LLM prompt to file."""
     config = _resolve_config(args.config)
-    builder = HotspotUniverseBuilder(config)
+    builder = Screener(config)
     result = builder.build_prompt(
         trade_date=args.date,
         stock_limit=args.stock_limit,
@@ -222,7 +222,7 @@ def cmd_build_prompt(args: argparse.Namespace) -> None:
     print(f"  行业信号:     {'有' if result['industry_signal_available'] else '无'}")
     print()
     print(f"  下一步: 读取 prompt 文件，做主题分类，输出 topics.json，然后运行:")
-    print(f"    hotspot run --date {result['date_int']} --load-topics topics.json")
+    print(f"    hotsector run --date {result['date_int']} --load-topics topics.json")
 
 
 def _resolve_config(config_arg: str | None) -> dict:
