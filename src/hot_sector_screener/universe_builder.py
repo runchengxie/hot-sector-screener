@@ -7,13 +7,12 @@ from typing import Any
 
 import pandas as pd
 
-from .config import load_config
 from .data_sources.platform import (
-    load_ths_hot,
     load_dc_concept,
     load_dc_concept_cons,
-    load_kpl_concept_cons,
     load_hotspot_features,
+    load_kpl_concept_cons,
+    load_ths_hot,
 )
 from .data_sources.rotation_signal import load_industry_signal
 from .paths import ensure_output_dir
@@ -231,7 +230,7 @@ class Screener:
             "date": date_str,
             "generated_at": result["generated_at"],
             "run_config": config_path.name,
-            "data_sources": {k: v for k, v in result["data_sources"].items()},
+            "data_sources": dict(result["data_sources"]),
             "topics_count": len(topics),
             "universe_size": len(filtered),
             "output_files": {

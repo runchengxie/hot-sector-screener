@@ -209,17 +209,9 @@ def apply_liquidity_filter(
     max_price: float = 200.0,
     min_price: float = 2.0,
 ) -> list[dict[str, Any]]:
-    """Apply basic liquidity and price filters.
+    """Apply basic liquidity and price filters (pass-through stub).
 
     This is a placeholder — in production it would join with daily_basic
     from DATA_PLATFORM_ROOT to check turnover, market cap, etc.
     """
-    # In the real pipeline, this would:
-    # 1. Load daily_basic for the relevant date
-    # 2. Filter by amount rank percentile
-    # 3. Filter by price range
-    # 4. Exclude ST stocks
-    # 5. Exclude stocks with suspicious trading patterns
-
-    # For now, pass through (filters will be applied when daily_basic is available)
     return stocks

@@ -1,5 +1,5 @@
 # hot-sector-screener default config
-# Copy to configs/default.yml and modify as needed.
+# Edit this file directly to customise.
 
 market: a_share
 

@@ -5,8 +5,10 @@ import json
 import sys
 from pathlib import Path
 
+from .backtest.etf_backtest import run_etf_backtest
+from .backtest.stock_backtest import run_stock_backtest
 from .config import default_config, load_config
-from .data_sources.platform import list_available_dates, summarize_data_coverage
+from .data_sources.platform import summarize_data_coverage
 from .paths import OUTPUTS_DIR
 from .universe_builder import Screener
 
@@ -48,6 +50,27 @@ def build_parser() -> argparse.ArgumentParser:
     bp.add_argument("--stock-limit", type=int, default=30, help="Max hot stocks in prompt")
     bp.add_argument("--concept-limit", type=int, default=20, help="Max concepts in prompt")
 
+    # backtest — hotspot-driven strategy backtests
+    bt = sub.add_parser("backtest", help="Run hotspot-driven strategy backtests")
+    bt_sub = bt.add_subparsers(dest="bt_command", required=True)
+
+    # backtest stock
+    bt_stock = bt_sub.add_parser("stock", help="Hotspot concept → stocks backtest")
+    bt_stock.add_argument("--start", default="2024-10-14", help="Start date (YYYY-MM-DD)")
+    bt_stock.add_argument("--end", default="2026-05-01", help="End date (YYYY-MM-DD)")
+    bt_stock.add_argument("--top-concepts", type=int, default=3, help="Top N concepts per day")
+    bt_stock.add_argument("--stocks-per-concept", type=int, default=10)
+    bt_stock.add_argument("--sample", type=int, default=3, help="Sample every N trading days")
+    bt_stock.add_argument("--capital", type=float, default=1_000_000, help="Initial capital")
+
+    # backtest etf
+    bt_etf = bt_sub.add_parser("etf", help="Hotspot concept → ETF rotation backtest")
+    bt_etf.add_argument("--start", default="2024-10-14", help="Start date (YYYY-MM-DD)")
+    bt_etf.add_argument("--end", default="2026-04-30", help="End date (YYYY-MM-DD)")
+    bt_etf.add_argument("--top-k", type=int, default=3, help="Top K ETFs to hold")
+    bt_etf.add_argument("--fee", type=float, default=0.0005, help="Fee rate per side")
+    bt_etf.add_argument("--capital", type=float, default=1_000_000, help="Initial capital")
+
     return parser
 
 
@@ -55,7 +78,7 @@ def cmd_info(args: argparse.Namespace) -> None:
     """Show available hotspot data coverage."""
     coverage = summarize_data_coverage()
     print(f"{'='*60}")
-    print(f"  热点数据湖覆盖情况")
+    print("  热点数据湖覆盖情况")
     print(f"{'='*60}")
     for source, info in coverage.items():
         print(f"\n  {source}:")
@@ -194,7 +217,7 @@ def cmd_universe(args: argparse.Namespace) -> None:
         # Also show topics
         topics = data.get("topics", [])
         if topics:
-            print(f"\n  主题空间:")
+            print("\n  主题空间:")
             for t in topics:
                 print(f"    {t.get('topic', ''):<25s} w={t.get('weight', 0):.2f}  "
                       f"{t.get('reasoning', '')}")
@@ -221,7 +244,7 @@ def cmd_build_prompt(args: argparse.Namespace) -> None:
     print(f"  提示词长度:   {result['prompt_length']} 字符")
     print(f"  行业信号:     {'有' if result['industry_signal_available'] else '无'}")
     print()
-    print(f"  下一步: 读取 prompt 文件，做主题分类，输出 topics.json，然后运行:")
+    print("  下一步: 读取 prompt 文件，做主题分类，输出 topics.json，然后运行:")
     print(f"    hotsector run --date {result['date_int']} --load-topics topics.json")
 
 
@@ -241,6 +264,37 @@ def _resolve_date(date_arg: str | None) -> str | None:
     return None
 
 
+def cmd_backtest_stock(args: argparse.Namespace) -> None:
+    """Run hotspot concept → stocks backtest."""
+    import json
+
+    result = run_stock_backtest(
+        start_date=args.start,
+        end_date=args.end,
+        top_concepts=args.top_concepts,
+        stocks_per_concept=args.stocks_per_concept,
+        sample_every_n_days=args.sample,
+        initial_capital=args.capital,
+    )
+    print("\n" + "=" * 60)
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+
+
+def cmd_backtest_etf(args: argparse.Namespace) -> None:
+    """Run hotspot concept → ETF rotation backtest."""
+    import json
+
+    result = run_etf_backtest(
+        top_k=args.top_k,
+        start_date=args.start,
+        end_date=args.end,
+        fee_rate=args.fee,
+        initial_capital=args.capital,
+    )
+    print("\n" + "=" * 70)
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+
+
 def main() -> None:
     parser = build_parser()
     args = parser.parse_args()
@@ -252,6 +306,19 @@ def main() -> None:
         "universe": cmd_universe,
         "build-prompt": cmd_build_prompt,
     }
+
+    # backtest has sub-subcommands
+    if args.command == "backtest":
+        bt_handlers = {
+            "stock": cmd_backtest_stock,
+            "etf": cmd_backtest_etf,
+        }
+        handler = bt_handlers.get(args.bt_command)
+        if handler:
+            handler(args)
+            return
+        parser.print_help()
+        sys.exit(1)
 
     handler = commands.get(args.command)
     if handler:

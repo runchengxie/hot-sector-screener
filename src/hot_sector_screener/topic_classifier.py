@@ -171,7 +171,7 @@ def _call_llm_for_topics(prompt: str) -> str:
             result = json.loads(resp.read().decode("utf-8"))
             return result["choices"][0]["message"]["content"]
     except (urllib.error.URLError, urllib.error.HTTPError, json.JSONDecodeError) as e:
-        raise RuntimeError(f"LLM API call failed: {e}")
+        raise RuntimeError(f"LLM API call failed: {e}") from e
 
 
 class TopicClassifier:

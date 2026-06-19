@@ -118,6 +118,18 @@ def load_kpl_concept_cons(trade_date: str) -> pd.DataFrame:
     )
 
 
+def load_daily_data(trade_date: str) -> pd.DataFrame:
+    """Load daily A-share stock price data for a given trade date.
+
+    Returns columns: ts_code, trade_date, open, high, low, close, pct_chg, ...
+    """
+    root = _resolve_platform_root()
+    daily_dir = root / "assets" / "tushare" / "a_share" / "daily"
+    if not daily_dir.is_dir():
+        return pd.DataFrame()
+    return _load_hive_partitioned(daily_dir, trade_date)
+
+
 def load_hotspot_features(trade_date: str) -> pd.DataFrame:
     """Load derived hotspot features for a given trade date.
 
@@ -128,25 +140,6 @@ def load_hotspot_features(trade_date: str) -> pd.DataFrame:
     if not hf_dir.is_dir():
         return pd.DataFrame()
     return _load_hive_partitioned(hf_dir, trade_date)
-
-
-def load_industry_changes(trade_date: str) -> pd.DataFrame:
-    """Load SW2021 industry membership effective on or before trade_date."""
-    root = _resolve_platform_root()
-    ind_dir = root / "assets" / "tushare" / "a_share" / "industry_changes"
-    if not ind_dir.is_dir():
-        return pd.DataFrame()
-    df = _load_hive_partitioned(ind_dir, trade_date)
-    if df.empty:
-        # industry_changes may be non-partitioned; load the latest
-        df = pd.read_parquet(ind_dir)
-        if not df.empty and "effective_date" in df.columns:
-            date_int = int(trade_date.replace("-", ""))
-            df = df[
-                (df["effective_date"] <= date_int)
-                & ((df["end_date"].isna()) | (df["end_date"] >= date_int))
-            ]
-    return df
 
 
 def list_available_dates(source: str = "ths_hot") -> list[str]:

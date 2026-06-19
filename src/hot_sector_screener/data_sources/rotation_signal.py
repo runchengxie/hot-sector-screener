@@ -15,14 +15,6 @@ def _resolve_rotation_output_root() -> Path | None:
     return base if base.is_dir() else None
 
 
-def list_available_runs() -> list[str]:
-    """List available rotation-v3 output run directories."""
-    base = _resolve_rotation_output_root()
-    if base is None:
-        return []
-    return sorted(str(d.name) for d in base.iterdir() if d.is_dir())
-
-
 def load_industry_signal(run_dir: str | None = None) -> pd.DataFrame:
     """Load the industry_signal.csv from a rotation-v3 output run.
 
@@ -45,16 +37,3 @@ def load_industry_signal(run_dir: str | None = None) -> pd.DataFrame:
     if not csv_path.exists():
         return pd.DataFrame()
     return pd.read_csv(csv_path)
-
-
-def load_run_config(run_dir: str) -> dict | None:
-    """Load run_config.json from a rotation-v3 output run."""
-    base = _resolve_rotation_output_root()
-    if base is None:
-        return None
-    config_path = base / run_dir / "run_config.json"
-    if not config_path.exists():
-        return None
-    import json
-    with open(config_path) as f:
-        return json.load(f)

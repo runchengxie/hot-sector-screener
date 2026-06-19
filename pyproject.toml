@@ -49,18 +49,23 @@ line-length = 100
 target-version = "py310"
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP", "B", "SIM"]
+select = ["E", "F", "I", "UP", "B", "SIM", "C4", "RET", "RUF", "C90"]
 fixable = ["I"]
+extend-safe-fixes = ["UP"]
+ignore = ["RUF001", "RUF002", "RUF003"]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 15
 
 [tool.ruff.format]
 line-ending = "lf"
 quote-style = "double"
 
 [tool.pyright]
-include = ["src"]
+include = ["src", "tests"]
 exclude = ["**/.venv", "outputs", "data"]
 pythonVersion = "3.10"
 pythonPlatform = "All"
-typeCheckingMode = "basic"
+typeCheckingMode = "standard"
 venvPath = "."
 venv = ".venv"
