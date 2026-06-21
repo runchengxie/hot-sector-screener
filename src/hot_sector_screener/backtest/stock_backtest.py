@@ -105,36 +105,48 @@ def _map_concepts_to_candidates(
 ) -> list[str]:
     """Map concept names to candidate stock codes via kpl_concept_cons.
 
-    Uses substring matching (case-insensitive) against kpl con_name;
-    falls back to desc-field fuzzy match when no con_name match is found.
+    kpl schema: ts_code=concept_code (e.g. '000025.KP'),
+                con_code=stock_code (e.g. '000977.SZ'),
+                name=concept_name (e.g. 'AI算力概念'),
+                con_name=stock_name (e.g. '浪潮信息')
+
+    Strategy: match concept name against kpl 'name' column (concept names),
+    then return all stock codes (con_code) in matched concepts.
+    Falls back to desc-field fuzzy match.
     """
     kpl = load_kpl_concept_cons(dt)
     if kpl.empty:
         return []
 
-    # Build lookup: con_name → set of ts_code
-    kpl_lookup: dict[str, set[str]] = {}
+    # Build lookup: concept_code (ts_code) → set of stock_codes (con_code)
+    concept_to_stocks: dict[str, set[str]] = {}
+    concept_names: dict[str, str] = {}  # concept_code → concept_name
     for _, row in kpl.iterrows():
-        con_name = str(row.get("con_name", "")).strip()
-        code = str(row.get("ts_code", "")).strip()
-        if con_name and code:
-            kpl_lookup.setdefault(con_name, set()).add(code)
+        cc = str(row.get("ts_code", "")).strip()      # concept code
+        sc = str(row.get("con_code", "")).strip()     # stock code
+        cn = str(row.get("name", "")).strip()         # concept name
+        if cc and sc:
+            concept_to_stocks.setdefault(cc, set()).add(sc)
+        if cc and cn:
+            concept_names[cc] = cn
 
     candidate_codes: list[str] = []
     for concept in top_c_list:
         matched = False
-        for kpl_name, codes in kpl_lookup.items():
-            if concept.lower() in kpl_name.lower() or kpl_name.lower() in concept.lower():
+        # 1. Match concept name against kpl 'name' (concept names)
+        for cc, cn in concept_names.items():
+            if concept.lower() in cn.lower() or cn.lower() in concept.lower():
+                codes = concept_to_stocks.get(cc, set())
                 candidate_codes.extend(list(codes)[:stocks_per_concept])
                 matched = True
         if not matched:
-            # Try fuzzy match via kpl desc field
+            # 2. Try fuzzy match via kpl desc field (stock descriptions)
             desc_match = kpl[kpl["desc"].str.contains(
                 re.escape(concept), case=False, na=False
             )]
             if not desc_match.empty:
                 codes_from_desc = list(dict.fromkeys(
-                    desc_match["ts_code"].astype(str).tolist()
+                    desc_match["con_code"].astype(str).tolist()  # stock codes
                 ))[:stocks_per_concept]
                 candidate_codes.extend(codes_from_desc)
 
@@ -200,10 +212,10 @@ def _compute_entry_exit(
 def _benchmark_market_return(
     sampled_dates: list[str], all_dates: list[str]
 ) -> dict[str, Any] | None:
-    """Simple CSI 300 (510300.SH) proxy: average of all A-share daily pct_chg.
+    """Market-average daily pct_chg proxy (no real CSI 300 index in data lake).
 
     For each sampled date, takes the next trading day's market-wide average
-    pct_chg as a proxy for the CSI 300 return on that day.
+    pct_chg across all A-shares as a broad market proxy.
     """
     entry_returns: list[float] = []
     for d in sampled_dates:
@@ -256,13 +268,48 @@ def _build_result(
     strategy_metrics = compute_metrics(daily_returns, initial_capital)
     strategy_metrics["trade_count"] = strategy_metrics.pop("trade_days")
 
-    # CSI 300 benchmark via market-average proxy
+    # CSI 300 proxy: market-average daily pct_chg (no real CSI 300 data in lake)
     bm_ret = _benchmark_market_return(sampled, all_dates)
+    total_ret = float(np.prod(1 + np.array(daily_returns)) - 1) if daily_returns else 0.0
     if bm_ret is not None and daily_returns:
-        total_ret = float(np.prod(1 + np.array(daily_returns)) - 1)
         excess = total_ret - bm_ret["total_return"]
     else:
         excess = None
+
+    # Compute beta / alpha vs benchmark proxy
+    beta = None
+    alpha = None
+    if bm_ret is not None and daily_returns and bm_ret.get("days", 0) >= 10:
+        bm_sample = _benchmark_market_return(sampled, all_dates)
+        if bm_sample:
+            # Reconstruct benchmark return series for beta calc
+            # Use market-average returns aligned with strategy trades
+            bm_series: list[float] = []
+            for d in sampled:
+                try:
+                    idx = all_dates.index(d)
+                except ValueError:
+                    continue
+                if idx + 1 >= len(all_dates):
+                    continue
+                df = load_daily_data(_fmt_date(all_dates[idx + 1]))
+                if df.empty or "pct_chg" not in df.columns:
+                    continue
+                chg = df["pct_chg"].astype(float).dropna()
+                if len(chg) > 100:
+                    bm_series.append(float(chg.mean()) / 100)
+            if len(bm_series) >= 10:
+                min_len = min(len(daily_returns), len(bm_series))
+                s = np.array(daily_returns[:min_len])
+                b = np.array(bm_series[:min_len])
+                cov = float(np.cov(s, b)[0, 1])
+                var = float(np.var(b))
+                if var > 0:
+                    beta = round(cov / var, 3)
+                    bm_total = float(np.prod(1 + b) - 1)
+                    bm_ann = float((1 + bm_total) ** (252 / min_len) - 1) if min_len > 0 else 0.0
+                    strat_ann = float((1 + total_ret) ** (252 / len(daily_returns)) - 1) if daily_returns else 0.0
+                    alpha = round((strat_ann - beta * bm_ann) * 100, 2)
 
     return {
         "period": f"{start_date} to {end_date}",
@@ -275,11 +322,13 @@ def _build_result(
         },
         "strategy": strategy_metrics,
         "benchmark": {
-            "label": "沪深300 ETF (510300) 等权买入持有",
+            "label": "全A等权 (daily pct_chg均值, CSI300代理)",
             "total_return_pct": round(bm_ret["total_return"] * 100, 2) if bm_ret else None,
             "annual_return_pct": round(bm_ret["annual_return"] * 100, 2) if bm_ret else None,
         },
         "excess_return_pct": round(excess * 100, 2) if excess is not None else None,
+        "beta": beta,
+        "alpha_pct": alpha,
         "concept_samples": concept_history[:10],
     }
 
@@ -304,11 +353,11 @@ def run_stock_backtest(
       3. Map each concept to constituent stocks via kpl_concept_cons
          (substring matching on concept name, with desc-field fallback).
       4. Buy equal-weight at next-day open, sell at day-after open.
-      5. Compare against a CSI 300 proxy (market-average daily pct_chg).
+      5. Compare against market-average proxy (no real CSI 300 in data lake).
 
     Returns:
         dict with keys: period, config, strategy, benchmark,
-        excess_return_pct, concept_samples.
+        excess_return_pct, beta, alpha_pct, concept_samples.
     """
     # 1. Build date list
     all_dates, sampled = _build_date_list(start_date, end_date, sample_every_n_days)
