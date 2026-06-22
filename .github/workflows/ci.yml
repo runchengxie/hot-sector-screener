@@ -12,9 +12,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          submodules: 'recursive'
-          token: ${{ secrets.A_SHARE_FACTOR_CORE_READ_TOKEN }}
+      - name: Init submodules
+        run: |
+          git config --global url."https://x-access-token:${{ secrets.A_SHARE_FACTOR_CORE_READ_TOKEN }}@github.com/".insteadOf "https://github.com/"
+          git submodule update --init --recursive
       - name: Install uv
         uses: astral-sh/setup-uv@v5
       - name: Set up Python
@@ -31,9 +32,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          submodules: 'recursive'
-          token: ${{ secrets.A_SHARE_FACTOR_CORE_READ_TOKEN }}
+      - name: Init submodules
+        run: |
+          git config --global url."https://x-access-token:${{ secrets.A_SHARE_FACTOR_CORE_READ_TOKEN }}@github.com/".insteadOf "https://github.com/"
+          git submodule update --init --recursive
       - name: Install uv
         uses: astral-sh/setup-uv@v5
       - name: Set up Python
