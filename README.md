@@ -5,6 +5,12 @@ A 股热点题材候选池筛选器。每天开盘前，根据同花顺热榜、
 ## 快速开始
 
 ```bash
+# 克隆（含子模块）
+git clone --recurse-submodules <repo-url>
+# 或先 clone 再拉子模块：
+git submodule update --init --recursive
+
+# 安装依赖
 uv sync --extra dev
 ```
 
