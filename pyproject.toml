@@ -13,6 +13,7 @@ authors = [
 ]
 keywords = ["quant", "a-share", "hot-sector", "screener", "trading"]
 dependencies = [
+  "a-share-factor-core>=0.1.0",
   "numpy>=1.26",
   "pandas>=2.2",
   "PyYAML>=6.0",
@@ -38,6 +39,9 @@ dev = [
 
 [project.scripts]
 hotsector = "hot_sector_screener.cli:main"
+
+[tool.uv.sources]
+a-share-factor-core = { path = "vendor/a-share-factor-core" }
 
 [tool.setuptools]
 package-dir = {"" = "src"}

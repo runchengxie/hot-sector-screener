@@ -1,0 +1,3 @@
+[submodule "vendor/a-share-factor-core"]
+	path = vendor/a-share-factor-core
+	url = ../a-share-factor-core

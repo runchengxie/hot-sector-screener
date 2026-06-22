@@ -15,6 +15,34 @@ resolution-markers = [
 ]
 
 [[package]]
+name = "a-share-factor-core"
+version = "0.1.0"
+source = { directory = "vendor/a-share-factor-core" }
+dependencies = [
+    { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+    { name = "pandas", version = "2.3.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "pandas", version = "3.0.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+    { name = "scipy", version = "1.15.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "scipy", version = "1.17.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.11.*'" },
+    { name = "scipy", version = "1.18.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
+    { name = "ta" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "lightgbm", marker = "extra == 'ml'", specifier = ">=4.3" },
+    { name = "numpy", specifier = ">=1.26" },
+    { name = "pandas", specifier = ">=2.2" },
+    { name = "pyright", marker = "extra == 'dev'", specifier = ">=1.1.394" },
+    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.3" },
+    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.8.0" },
+    { name = "scipy", specifier = ">=1.13" },
+    { name = "ta", specifier = ">=0.11" },
+]
+provides-extras = ["ml", "dev"]
+
+[[package]]
 name = "colorama"
 version = "0.4.6"
 source = { registry = "https://pypi.org/simple" }
@@ -40,6 +68,7 @@ name = "hot-sector-screener"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "a-share-factor-core" },
     { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "pandas", version = "2.3.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
@@ -67,6 +96,7 @@ ml = [
 
 [package.metadata]
 requires-dist = [
+    { name = "a-share-factor-core", directory = "vendor/a-share-factor-core" },
     { name = "lightgbm", marker = "extra == 'ml'", specifier = ">=4.3" },
     { name = "numpy", specifier = ">=1.26" },
     { name = "pandas", specifier = ">=2.2" },
