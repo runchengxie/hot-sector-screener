@@ -1,8 +1,16 @@
-"""Backtest metrics computation."""
+"""Backtest metrics computation with statistical validation.
+
+Includes:
+  - compute_metrics: standard backtest metrics
+  - compute_advanced_metrics: adds DSR, PSR on top
+  - yearly_breakdown: per-year performance
+"""
 
 from __future__ import annotations
 
 import numpy as np
+
+from ..validation import deflated_sharpe_ratio, probabilistic_sharpe_ratio
 
 
 def max_drawdown(returns: np.ndarray) -> float:
@@ -58,6 +66,61 @@ def compute_metrics(
         "trade_days": n,
         "final_nav": round(nav, 0),
     }
+
+
+def compute_advanced_metrics(
+    daily_returns: list[float],
+    initial_capital: float = 1_000_000,
+    effective_trials: int = 1,
+    annual_factor: int = 252,
+) -> dict:
+    """Compute standard metrics PLUS DSR and PSR.
+
+    DSR adjusts the Sharpe ratio for multiple testing bias — critical when
+    you've swept many parameter configurations.
+
+    Args:
+        daily_returns: List of per-period returns.
+        initial_capital: Starting capital.
+        effective_trials: Number of independent strategy variations tested.
+            Conservative: count every parameter combination you tried.
+        annual_factor: Trading periods per year (252 for daily).
+
+    Returns:
+        Dict with standard metrics plus dsr, psr, expected_max_sharpe,
+        min_track_record_length, skewness, kurtosis.
+    """
+    base = compute_metrics(daily_returns, initial_capital, annual_factor)
+
+    if not daily_returns:
+        base["dsr"] = 0.0
+        base["psr"] = 0.0
+        base["expected_max_sharpe"] = 0.0
+        base["min_track_record_length_days"] = None
+        base["skewness"] = 0.0
+        base["kurtosis"] = 3.0
+        return base
+
+    ret_arr = np.array(daily_returns)
+
+    dsr_stats = deflated_sharpe_ratio(
+        ret_arr,
+        effective_trials=effective_trials,
+        periods_per_year=annual_factor,
+    )
+
+    base["dsr"] = round(float(dsr_stats["dsr"]), 3)
+    base["psr"] = round(float(dsr_stats.get("dsr", 0.0)), 3)  # DSR IS the relevant PSR
+    base["expected_max_sharpe"] = round(float(dsr_stats.get("expected_max_sharpe", 0.0)), 3)
+    base["min_track_record_length_days"] = (
+        round(float(dsr_stats["min_track_record_length"]))
+        if dsr_stats.get("min_track_record_length") is not None
+        else None
+    )
+    base["skewness"] = round(float(dsr_stats.get("skewness", 0.0)), 3)
+    base["kurtosis"] = round(float(dsr_stats.get("kurtosis", 3.0)), 3)
+
+    return base
 
 
 def yearly_breakdown(

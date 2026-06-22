@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 
 from .backtest.etf_backtest import run_etf_backtest
+from .backtest.etf_ml_backtest import run_etf_ml_backtest
 from .backtest.stock_backtest import run_stock_backtest
 from .config import default_config, load_config
 from .data_sources.platform import summarize_data_coverage
@@ -70,6 +71,20 @@ def build_parser() -> argparse.ArgumentParser:
     bt_etf.add_argument("--top-k", type=int, default=3, help="Top K ETFs to hold")
     bt_etf.add_argument("--fee", type=float, default=0.0005, help="Fee rate per side")
     bt_etf.add_argument("--capital", type=float, default=1_000_000, help="Initial capital")
+
+    # backtest etf-ml
+    bt_etf_ml = bt_sub.add_parser(
+        "etf-ml", help="ML-enhanced hotspot → ETF rotation backtest (with technical features + walk-forward training)"
+    )
+    bt_etf_ml.add_argument("--start", default="2024-10-14", help="Start date (YYYY-MM-DD)")
+    bt_etf_ml.add_argument("--end", default="2026-04-30", help="End date (YYYY-MM-DD)")
+    bt_etf_ml.add_argument("--top-k", type=int, default=3, help="Top K ETFs to hold")
+    bt_etf_ml.add_argument("--fee", type=float, default=0.0005, help="Fee rate per side")
+    bt_etf_ml.add_argument("--capital", type=float, default=1_000_000, help="Initial capital")
+    bt_etf_ml.add_argument("--model", default="linear_rank", choices=["linear_rank", "lightgbm_regression"], help="Model type")
+    bt_etf_ml.add_argument("--step-days", type=int, default=40, help="Walk-forward step size in trading days")
+    bt_etf_ml.add_argument("--min-train", type=int, default=120, help="Minimum training days before first fold")
+    bt_etf_ml.add_argument("--trials", type=int, default=10, help="Effective trials for DSR")
 
     return parser
 
@@ -295,6 +310,25 @@ def cmd_backtest_etf(args: argparse.Namespace) -> None:
     print(json.dumps(result, ensure_ascii=False, indent=2))
 
 
+def cmd_backtest_etf_ml(args: argparse.Namespace) -> None:
+    """Run ML-enhanced hotspot → ETF rotation backtest."""
+    import json
+
+    result = run_etf_ml_backtest(
+        start_date=args.start,
+        end_date=args.end,
+        top_k=args.top_k,
+        fee_rate=args.fee,
+        initial_capital=args.capital,
+        model_type=args.model,
+        walk_forward_step_days=args.step_days,
+        min_train_days=args.min_train,
+        effective_trials=args.trials,
+    )
+    print("\n" + "=" * 70)
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+
+
 def main() -> None:
     parser = build_parser()
     args = parser.parse_args()
@@ -312,6 +346,7 @@ def main() -> None:
         bt_handlers = {
             "stock": cmd_backtest_stock,
             "etf": cmd_backtest_etf,
+            "etf-ml": cmd_backtest_etf_ml,
         }
         handler = bt_handlers.get(args.bt_command)
         if handler:
