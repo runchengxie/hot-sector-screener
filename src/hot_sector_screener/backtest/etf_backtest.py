@@ -30,11 +30,7 @@ from .metrics import compute_metrics, yearly_breakdown
 
 # ── Paths ──
 
-ROTATION_ROOT = Path(
-    os.environ.get(
-        "ETF_ROTATION_ROOT", "/home/richard/code/guan-etf-rotation-v3"
-    )
-)
+ROTATION_ROOT = Path(os.environ.get("ETF_ROTATION_ROOT", "/home/richard/code/guan-etf-rotation-v3"))
 
 # ── ETF metadata (hardcoded from etf_metadata.yml) ──
 
@@ -226,6 +222,7 @@ CONCEPT_EXPOSURE_MAP: dict[str, dict[str, float]] = {
 
 # ── Private helpers ──
 
+
 def _load_ths_hot_concepts(trade_date: str) -> list[str]:
     """Load ths_hot for a date and extract concept names from the raw column.
 
@@ -243,7 +240,7 @@ def _load_ths_hot_concepts(trade_date: str) -> list[str]:
     all_concepts: list[str] = []
     for raw in df["concept"]:
         s = str(raw).strip().strip("[]").strip('"').strip("'")
-        parts = re.split(r'[\",，]\s*', s)
+        parts = re.split(r"[\",，]\s*", s)
         for p in parts:
             p = p.strip().strip('"').strip("'")
             if p and p not in ("", "[", "]"):
@@ -411,9 +408,7 @@ def _compute_daily_return(
     return portfolio_ret, trade_record
 
 
-def _benchmark_csi300(
-    all_dates: list[str], df_csi: pd.DataFrame | None
-) -> dict[str, float] | None:
+def _benchmark_csi300(all_dates: list[str], df_csi: pd.DataFrame | None) -> dict[str, float] | None:
     """Buy & hold 沪深300 ETF over the same trading period."""
     if df_csi is None or df_csi.empty:
         return None
@@ -499,6 +494,7 @@ def _build_result(
 
 # ── Public API ──
 
+
 def run_etf_backtest(
     top_k: int = 3,
     start_date: str = "2024-10-14",
@@ -520,7 +516,7 @@ def run_etf_backtest(
         yearly_breakdown, most_selected_etfs, recent_trades.
     """
     print(f"Hotspot→ETF Backtest ({start_date} ~ {end_date})")
-    print(f"  {len(ETF_METADATA)} ETF metadata entries, top K={top_k}, fee={fee_rate*100:.2f}%")
+    print(f"  {len(ETF_METADATA)} ETF metadata entries, top K={top_k}, fee={fee_rate * 100:.2f}%")
     print()
 
     # Pre-load all ETF data
@@ -537,9 +533,7 @@ def run_etf_backtest(
     trade_log: list[dict] = []
 
     for i in range(len(all_dates)):
-        ret, record = _compute_daily_return(
-            i, all_dates, top_k, fee_rate, etf_data
-        )
+        ret, record = _compute_daily_return(i, all_dates, top_k, fee_rate, etf_data)
         if ret is None or record is None:
             continue
 

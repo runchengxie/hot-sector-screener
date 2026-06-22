@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from ..validation import deflated_sharpe_ratio, probabilistic_sharpe_ratio
+from ..validation import deflated_sharpe_ratio
 
 
 def max_drawdown(returns: np.ndarray) -> float:
@@ -145,12 +145,14 @@ def yearly_breakdown(
         sharpe = float(ann / vol) if vol > 0 else 0.0
         hit = float(np.mean(arr > 0)) * 100
         dd = float(max_drawdown(arr))
-        result.append({
-            "year": year,
-            "trades": n,
-            "return_pct": round(total * 100, 2),
-            "sharpe": round(sharpe, 3),
-            "hit_rate_pct": round(hit, 1),
-            "max_dd_pct": round(dd * 100, 2),
-        })
+        result.append(
+            {
+                "year": year,
+                "trades": n,
+                "return_pct": round(total * 100, 2),
+                "sharpe": round(sharpe, 3),
+                "hit_rate_pct": round(hit, 1),
+                "max_dd_pct": round(dd * 100, 2),
+            }
+        )
     return result

@@ -1,4 +1,5 @@
 """Tests for the universe builder (Screener pipeline)."""
+
 from __future__ import annotations
 
 from unittest.mock import patch
@@ -36,10 +37,18 @@ def empty_df():
 
 @pytest.fixture
 def sample_dc_cons():
-    return pd.DataFrame([
-        {"ts_code": "300308.SZ", "name": "中际旭创", "theme_code": "CPO",
-         "trade_date": "20260619", "industry": "通信", "hot_num": 5},
-    ])
+    return pd.DataFrame(
+        [
+            {
+                "ts_code": "300308.SZ",
+                "name": "中际旭创",
+                "theme_code": "CPO",
+                "trade_date": "20260619",
+                "industry": "通信",
+                "hot_num": 5,
+            },
+        ]
+    )
 
 
 class TestScreenerInit:
@@ -114,11 +123,25 @@ class TestScreenerBuildUniverse:
         """When all data sources return empty, universe should still produce a valid result."""
         with (
             patch("hot_sector_screener.universe_builder.load_ths_hot", return_value=pd.DataFrame()),
-            patch("hot_sector_screener.universe_builder.load_dc_concept", return_value=pd.DataFrame()),
-            patch("hot_sector_screener.universe_builder.load_dc_concept_cons", return_value=pd.DataFrame()),
-            patch("hot_sector_screener.universe_builder.load_kpl_concept_cons", return_value=pd.DataFrame()),
-            patch("hot_sector_screener.universe_builder.load_hotspot_features", return_value=pd.DataFrame()),
-            patch("hot_sector_screener.universe_builder.load_industry_signal", return_value=pd.DataFrame()),
+            patch(
+                "hot_sector_screener.universe_builder.load_dc_concept", return_value=pd.DataFrame()
+            ),
+            patch(
+                "hot_sector_screener.universe_builder.load_dc_concept_cons",
+                return_value=pd.DataFrame(),
+            ),
+            patch(
+                "hot_sector_screener.universe_builder.load_kpl_concept_cons",
+                return_value=pd.DataFrame(),
+            ),
+            patch(
+                "hot_sector_screener.universe_builder.load_hotspot_features",
+                return_value=pd.DataFrame(),
+            ),
+            patch(
+                "hot_sector_screener.universe_builder.load_industry_signal",
+                return_value=pd.DataFrame(),
+            ),
         ):
             screener = Screener({"llm": {"enabled": False}})
             result = screener.build_universe(trade_date="2026-06-19")
@@ -131,11 +154,25 @@ class TestScreenerBuildUniverse:
         """build_universe should create output files when output_dir is specified."""
         with (
             patch("hot_sector_screener.universe_builder.load_ths_hot", return_value=pd.DataFrame()),
-            patch("hot_sector_screener.universe_builder.load_dc_concept", return_value=pd.DataFrame()),
-            patch("hot_sector_screener.universe_builder.load_dc_concept_cons", return_value=sample_dc_cons),
-            patch("hot_sector_screener.universe_builder.load_kpl_concept_cons", return_value=pd.DataFrame()),
-            patch("hot_sector_screener.universe_builder.load_hotspot_features", return_value=pd.DataFrame()),
-            patch("hot_sector_screener.universe_builder.load_industry_signal", return_value=pd.DataFrame()),
+            patch(
+                "hot_sector_screener.universe_builder.load_dc_concept", return_value=pd.DataFrame()
+            ),
+            patch(
+                "hot_sector_screener.universe_builder.load_dc_concept_cons",
+                return_value=sample_dc_cons,
+            ),
+            patch(
+                "hot_sector_screener.universe_builder.load_kpl_concept_cons",
+                return_value=pd.DataFrame(),
+            ),
+            patch(
+                "hot_sector_screener.universe_builder.load_hotspot_features",
+                return_value=pd.DataFrame(),
+            ),
+            patch(
+                "hot_sector_screener.universe_builder.load_industry_signal",
+                return_value=pd.DataFrame(),
+            ),
         ):
             screener = Screener()
             result = screener.build_universe(
@@ -156,11 +193,25 @@ class TestScreenerScan:
         """scan should return structured data even when data is empty."""
         with (
             patch("hot_sector_screener.universe_builder.load_ths_hot", return_value=pd.DataFrame()),
-            patch("hot_sector_screener.universe_builder.load_dc_concept", return_value=pd.DataFrame()),
-            patch("hot_sector_screener.universe_builder.load_dc_concept_cons", return_value=pd.DataFrame()),
-            patch("hot_sector_screener.universe_builder.load_kpl_concept_cons", return_value=pd.DataFrame()),
-            patch("hot_sector_screener.universe_builder.load_hotspot_features", return_value=pd.DataFrame()),
-            patch("hot_sector_screener.universe_builder.load_industry_signal", return_value=pd.DataFrame()),
+            patch(
+                "hot_sector_screener.universe_builder.load_dc_concept", return_value=pd.DataFrame()
+            ),
+            patch(
+                "hot_sector_screener.universe_builder.load_dc_concept_cons",
+                return_value=pd.DataFrame(),
+            ),
+            patch(
+                "hot_sector_screener.universe_builder.load_kpl_concept_cons",
+                return_value=pd.DataFrame(),
+            ),
+            patch(
+                "hot_sector_screener.universe_builder.load_hotspot_features",
+                return_value=pd.DataFrame(),
+            ),
+            patch(
+                "hot_sector_screener.universe_builder.load_industry_signal",
+                return_value=pd.DataFrame(),
+            ),
         ):
             screener = Screener()
             result = screener.scan(trade_date="2026-06-19")
@@ -179,8 +230,13 @@ class TestScreenerBuildPrompt:
     def test_build_prompt_returns_prompt_text(self):
         with (
             patch("hot_sector_screener.universe_builder.load_ths_hot", return_value=pd.DataFrame()),
-            patch("hot_sector_screener.universe_builder.load_dc_concept", return_value=pd.DataFrame()),
-            patch("hot_sector_screener.universe_builder.load_industry_signal", return_value=pd.DataFrame()),
+            patch(
+                "hot_sector_screener.universe_builder.load_dc_concept", return_value=pd.DataFrame()
+            ),
+            patch(
+                "hot_sector_screener.universe_builder.load_industry_signal",
+                return_value=pd.DataFrame(),
+            ),
         ):
             screener = Screener()
             result = screener.build_prompt(trade_date="2026-06-19")

@@ -31,11 +31,17 @@ def build_parser() -> argparse.ArgumentParser:
     run = sub.add_parser("run", help="Full pipeline: collect → LLM → map → universe")
     run.add_argument("--date", default=None, help="Trade date (YYYY-MM-DD or YYYYMMDD)")
     run.add_argument("--config", default=None, help="Config YAML path")
-    run.add_argument("--no-llm", action="store_true", help="Skip LLM, use fallback topic extraction")
+    run.add_argument(
+        "--no-llm", action="store_true", help="Skip LLM, use fallback topic extraction"
+    )
     run.add_argument("--output-dir", default=None, help="Custom output directory")
     run.add_argument("--max-candidates", type=int, default=None, help="Override max candidates")
     run.add_argument("--stocks-per-topic", type=int, default=None, help="Override stocks per topic")
-    run.add_argument("--load-topics", default=None, help="Path to topics JSON file (skip LLM, use pre-classified topics)")
+    run.add_argument(
+        "--load-topics",
+        default=None,
+        help="Path to topics JSON file (skip LLM, use pre-classified topics)",
+    )
 
     # universe — list latest or specific output
     universe = sub.add_parser("universe", help="Show candidate universe output")
@@ -74,16 +80,29 @@ def build_parser() -> argparse.ArgumentParser:
 
     # backtest etf-ml
     bt_etf_ml = bt_sub.add_parser(
-        "etf-ml", help="ML-enhanced hotspot → ETF rotation backtest (with technical features + walk-forward training)"
+        "etf-ml",
+        help=(
+            "ML-enhanced hotspot → ETF rotation backtest "
+            "(with technical features + walk-forward training)"
+        ),
     )
     bt_etf_ml.add_argument("--start", default="2024-10-14", help="Start date (YYYY-MM-DD)")
     bt_etf_ml.add_argument("--end", default="2026-04-30", help="End date (YYYY-MM-DD)")
     bt_etf_ml.add_argument("--top-k", type=int, default=3, help="Top K ETFs to hold")
     bt_etf_ml.add_argument("--fee", type=float, default=0.0005, help="Fee rate per side")
     bt_etf_ml.add_argument("--capital", type=float, default=1_000_000, help="Initial capital")
-    bt_etf_ml.add_argument("--model", default="linear_rank", choices=["linear_rank", "lightgbm_regression"], help="Model type")
-    bt_etf_ml.add_argument("--step-days", type=int, default=40, help="Walk-forward step size in trading days")
-    bt_etf_ml.add_argument("--min-train", type=int, default=120, help="Minimum training days before first fold")
+    bt_etf_ml.add_argument(
+        "--model",
+        default="linear_rank",
+        choices=["linear_rank", "lightgbm_regression"],
+        help="Model type",
+    )
+    bt_etf_ml.add_argument(
+        "--step-days", type=int, default=40, help="Walk-forward step size in trading days"
+    )
+    bt_etf_ml.add_argument(
+        "--min-train", type=int, default=120, help="Minimum training days before first fold"
+    )
     bt_etf_ml.add_argument("--trials", type=int, default=10, help="Effective trials for DSR")
 
     return parser
@@ -92,9 +111,9 @@ def build_parser() -> argparse.ArgumentParser:
 def cmd_info(args: argparse.Namespace) -> None:
     """Show available hotspot data coverage."""
     coverage = summarize_data_coverage()
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
     print("  热点数据湖覆盖情况")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
     for source, info in coverage.items():
         print(f"\n  {source}:")
         print(f"    可用交易日: {info['available_dates']}")
@@ -111,7 +130,7 @@ def cmd_scan(args: argparse.Namespace) -> None:
     result = builder.scan(trade_date=args.date)
 
     print(f"\n  扫描日期: {result['date']}")
-    print(f"  {'='*40}")
+    print(f"  {'=' * 40}")
     for source, info in result.items():
         if source == "date":
             continue
@@ -124,11 +143,13 @@ def cmd_scan(args: argparse.Namespace) -> None:
     if ths:
         print(f"\n  同花顺热榜 Top {len(ths)}:")
         print(f"  {'排名':>4s} {'代码':<12s} {'名称':<10s} {'热度':>6s} {'概念'}")
-        print(f"  {'-'*60}")
+        print(f"  {'-' * 60}")
         for s in ths:
-            print(f"  {str(s.get('rank', '')):>4s} {str(s.get('ts_code', '')):<12s} "
-                  f"{str(s.get('ts_name', '')):<10s} {str(s.get('hot', '')):>6s} "
-                  f"{s.get('concept', '')[:30]}")
+            print(
+                f"  {s.get('rank', '')!s:>4s} {s.get('ts_code', '')!s:<12s} "
+                f"{s.get('ts_name', '')!s:<10s} {s.get('hot', '')!s:>6s} "
+                f"{s.get('concept', '')[:30]}"
+            )
 
 
 def cmd_run(args: argparse.Namespace) -> None:
@@ -166,12 +187,12 @@ def cmd_run(args: argparse.Namespace) -> None:
 
     print(f"\n  运行日期: {result['date']}")
     print(f"  生成时间: {result['generated_at']}")
-    print(f"  {'='*40}")
+    print(f"  {'=' * 40}")
 
     # Topics
     print(f"\n  今日主题空间 ({len(result['topics'])} 个主题):")
     print(f"  {'主题':<30s} {'权重':>6s} {'来源'}")
-    print(f"  {'-'*60}")
+    print(f"  {'-' * 60}")
     for t in result["topics"]:
         sources = ", ".join(t.get("source_signals", []))
         print(f"  {t.get('topic', ''):<30s} {t.get('weight', 0):>6.2f}  {sources}")
@@ -180,11 +201,13 @@ def cmd_run(args: argparse.Namespace) -> None:
     universe = result.get("candidate_universe", [])
     print(f"\n  候选池: {result['universe_size']} 只股票")
     print(f"  {'代码':<12s} {'名称':<10s} {'相关性':>8s} {'主题来源'}")
-    print(f"  {'-'*60}")
-    for s in universe[:args.limit if hasattr(args, "limit") else 20]:
+    print(f"  {'-' * 60}")
+    for s in universe[: args.limit if hasattr(args, "limit") else 20]:
         topics_str = ", ".join(s.get("source_topics", []))[:30]
-        print(f"  {str(s.get('ts_code', '')):<12s} {str(s.get('name', '')):<10s} "
-              f"{float(s.get('relevance', 0)):>8.3f}  {topics_str}")
+        print(
+            f"  {s.get('ts_code', '')!s:<12s} {s.get('name', '')!s:<10s} "
+            f"{float(s.get('relevance', 0)):>8.3f}  {topics_str}"
+        )
 
     print(f"\n  输出目录: {result.get('output_dir', 'N/A')}")
 
@@ -210,6 +233,7 @@ def cmd_universe(args: argparse.Namespace) -> None:
 
     if args.csv and csv_path.exists():
         import pandas as pd
+
         df = pd.read_csv(csv_path)
         print(df.head(args.limit).to_string(index=False))
         return
@@ -223,19 +247,23 @@ def cmd_universe(args: argparse.Namespace) -> None:
         print(f"\n  候选池 {date_str} ({len(universe)} 只股票)")
         print(f"  输出目录: {out_dir}")
         print(f"  {'代码':<12s} {'名称':<10s} {'相关性':>8s} {'主题来源'}")
-        print(f"  {'-'*60}")
-        for s in universe[:args.limit]:
+        print(f"  {'-' * 60}")
+        for s in universe[: args.limit]:
             topics_str = ", ".join(s.get("source_topics", []))[:30]
-            print(f"  {str(s.get('ts_code', '')):<12s} {str(s.get('name', '')):<10s} "
-                  f"{float(s.get('relevance', 0)):>8.3f}  {topics_str}")
+            print(
+                f"  {s.get('ts_code', '')!s:<12s} {s.get('name', '')!s:<10s} "
+                f"{float(s.get('relevance', 0)):>8.3f}  {topics_str}"
+            )
 
         # Also show topics
         topics = data.get("topics", [])
         if topics:
             print("\n  主题空间:")
             for t in topics:
-                print(f"    {t.get('topic', ''):<25s} w={t.get('weight', 0):.2f}  "
-                      f"{t.get('reasoning', '')}")
+                print(
+                    f"    {t.get('topic', ''):<25s} w={t.get('weight', 0):.2f}  "
+                    f"{t.get('reasoning', '')}"
+                )
 
 
 def cmd_build_prompt(args: argparse.Namespace) -> None:

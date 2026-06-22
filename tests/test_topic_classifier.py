@@ -1,4 +1,5 @@
 """Tests for the topic classifier."""
+
 from __future__ import annotations
 
 from hot_sector_screener.topic_classifier import build_topic_prompt, parse_topic_response
@@ -7,12 +8,23 @@ from hot_sector_screener.topic_classifier import build_topic_prompt, parse_topic
 class TestTopicClassifier:
     def test_build_prompt_has_all_sections(self):
         stocks = [
-            {"ts_code": "300308.SZ", "ts_name": "中际旭创", "rank": "1",
-             "hot": "99", "concept": "CPO,光通信", "pct_change": "10.0"}
+            {
+                "ts_code": "300308.SZ",
+                "ts_name": "中际旭创",
+                "rank": "1",
+                "hot": "99",
+                "concept": "CPO,光通信",
+                "pct_change": "10.0",
+            }
         ]
         concepts = [
-            {"name": "CPO概念", "pct_change": "5.2", "strength": "8.5",
-             "lead_stock": "中际旭创", "z_t_num": "5"}
+            {
+                "name": "CPO概念",
+                "pct_change": "5.2",
+                "strength": "8.5",
+                "lead_stock": "中际旭创",
+                "z_t_num": "5",
+            }
         ]
         prompt = build_topic_prompt(stocks, concepts, latest_date="2026-06-19")
 
@@ -24,14 +36,22 @@ class TestTopicClassifier:
         assert "JSON" in prompt
 
     def test_parse_valid_json(self):
-        response = """[{"topic": "AI医疗", "weight": 0.32, "reasoning": "test", "related_concepts": ["AI"], "source_signals": ["ths_hot"]}]"""
+        response = (
+            '[{"topic": "AI医疗", "weight": 0.32, "reasoning": "test", '
+            '"related_concepts": ["AI"], "source_signals": ["ths_hot"]}]'
+        )
         topics = parse_topic_response(response)
         assert len(topics) == 1
         assert topics[0]["topic"] == "AI医疗"
         assert topics[0]["weight"] == 0.32
 
     def test_parse_markdown_code_block(self):
-        response = '```json\n[{"topic": "半导体", "weight": 0.25, "reasoning": "test", "related_concepts": ["半导体"], "source_signals": ["ths_hot"]}]\n```'
+        response = (
+            "```json\n"
+            '[{"topic": "半导体", "weight": 0.25, "reasoning": "test", '
+            '"related_concepts": ["半导体"], "source_signals": ["ths_hot"]}]\n'
+            "```"
+        )
         topics = parse_topic_response(response)
         assert len(topics) == 1
         assert topics[0]["topic"] == "半导体"

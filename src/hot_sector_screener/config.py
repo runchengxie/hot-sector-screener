@@ -29,9 +29,7 @@ def load_config(config_path: str | Path) -> dict[str, Any]:
             "enabled": payload.get("llm", {}).get("enabled", True),
             "model": payload.get("llm", {}).get("model", "deepseek-reasoner"),
             "provider": payload.get("llm", {}).get("provider", "deepseek"),
-            "prompt_template": payload.get("llm", {}).get(
-                "prompt_template", "default"
-            ),
+            "prompt_template": payload.get("llm", {}).get("prompt_template", "default"),
         },
         "universe": {
             "max_candidates": payload.get("universe", {}).get("max_candidates", 100),

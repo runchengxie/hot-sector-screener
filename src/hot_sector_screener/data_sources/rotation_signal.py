@@ -1,4 +1,5 @@
 """Read rotation-v3 industry-signal outputs from DATA_PLATFORM_ROOT."""
+
 from __future__ import annotations
 
 import os

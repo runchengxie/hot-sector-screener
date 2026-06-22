@@ -19,20 +19,17 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
-import numpy as np
 import pandas as pd
 
 from ..data_quality import detect_suspicious_price_jumps
 from ..features import calculate_technical_features, resolve_feature_columns
-from ..portfolio import build_equal_weight_portfolio, shrink_covariance_matrix
 from ..training import (
     DEFAULT_STRATEGY_PARAMS,
     build_training_data,
-    compute_feature_importance,
     preprocess_inference_features,
     train_model,
 )
-from ..validation import build_walk_forward_windows, compute_daily_rank_ic
+from ..validation import compute_daily_rank_ic
 from .etf_backtest import (
     CONCEPT_EXPOSURE_MAP,
     ETF_METADATA,
@@ -41,10 +38,7 @@ from .etf_backtest import (
 )
 from .metrics import compute_advanced_metrics
 
-
-ROTATION_ROOT = Path(
-    os.environ.get("ETF_ROTATION_ROOT", "/home/richard/code/guan-etf-rotation-v3")
-)
+ROTATION_ROOT = Path(os.environ.get("ETF_ROTATION_ROOT", "/home/richard/code/guan-etf-rotation-v3"))
 
 
 # ── ETF data loading ──
@@ -129,8 +123,7 @@ def _merge_features(
     # Technical features
     tech_row = tech_feat_df.loc[date]
     tech_feats = {
-        col: float(tech_row.get(col, 0.0))
-        for col in resolve_feature_columns("small_pool")
+        col: float(tech_row.get(col, 0.0)) for col in resolve_feature_columns("small_pool")
     }
 
     # Concept dimension features (dot product pre-computation for ML)
@@ -154,7 +147,7 @@ def _collect_dimension_names() -> list[str]:
 # ── Main ML backtest ──
 
 
-def run_etf_ml_backtest(
+def run_etf_ml_backtest(  # noqa: C901
     start_date: str = "2024-10-14",
     end_date: str = "2026-04-30",
     top_k: int = 3,
@@ -193,11 +186,11 @@ def run_etf_ml_backtest(
     Returns:
         Dict with strategy, baseline, benchmark, and fold-level metrics.
     """
-    print(f"\n{'='*60}")
-    print(f"  ML-Enhanced Hotspot → ETF Rotation Backtest")
+    print(f"\n{'=' * 60}")
+    print("  ML-Enhanced Hotspot → ETF Rotation Backtest")
     print(f"  Model: {model_type}, Walk-forward steps: {walk_forward_step_days}d")
     print(f"  Period: {start_date} to {end_date}")
-    print(f"{'='*60}\n")
+    print(f"{'=' * 60}\n")
 
     # 1. Load data
     print("1. Loading ETF data...")
@@ -210,7 +203,9 @@ def run_etf_ml_backtest(
         df = _load_etf_csv(sym)
         if df is not None:
             # Trim to backtest range
-            mask = (df["date"] >= pd.to_datetime(start_date)) & (df["date"] <= pd.to_datetime(end_date))
+            mask = (df["date"] >= pd.to_datetime(start_date)) & (
+                df["date"] <= pd.to_datetime(end_date)
+            )
             df = df[mask]
             if not df.empty:
                 etf_data[sym] = df.set_index("date").sort_index()
@@ -223,8 +218,10 @@ def run_etf_ml_backtest(
     if quality_issues:
         print(f"  ⚠ Found {len(quality_issues)} ETFs with suspicious price jumps:")
         for issue in quality_issues[:3]:
-            print(f"    {issue['symbol']}: {issue['worst_close_to_close_return_pct']:+.1f}% "
-                  f"on {issue['worst_jump_date'].strftime('%Y-%m-%d')}")
+            print(
+                f"    {issue['symbol']}: {issue['worst_close_to_close_return_pct']:+.1f}% "
+                f"on {issue['worst_jump_date'].strftime('%Y-%m-%d')}"
+            )
 
     # 3. Pre-compute technical features for all ETFs
     print("\n3. Computing technical features...")
@@ -241,33 +238,30 @@ def run_etf_ml_backtest(
     # 4. Build walk-forward folds
     print("\n4. Building walk-forward folds...")
     all_dates = [pd.Timestamp(f"{d[:4]}-{d[4:6]}-{d[6:]}") for d in date_list]
-    test_dates = all_dates[min_train_days:]  # Skip initial warmup
 
     params = dict(DEFAULT_STRATEGY_PARAMS)
-    params.update({
-        "model_type": model_type,
-        "min_history_days": min_train_days,
-        "purge_days": purge_days,
-        "embargo_days": embargo_days,
-        "feature_set": "small_pool",
-        "cross_sectional_feature_scaling": True,
-        "label_mode": "next_open_to_open",
-        "linear_rank_alpha": 10.0,
-    })
+    params.update(
+        {
+            "model_type": model_type,
+            "min_history_days": min_train_days,
+            "purge_days": purge_days,
+            "embargo_days": embargo_days,
+            "feature_set": "small_pool",
+            "cross_sectional_feature_scaling": True,
+            "label_mode": "next_open_to_open",
+            "linear_rank_alpha": 10.0,
+        }
+    )
 
     # Collect all dimension names for consistent feature columns
     all_dims = _collect_dimension_names()
     feat_cols = resolve_feature_columns("small_pool")
-    all_feature_cols = feat_cols + [f"concept_{d}" for d in all_dims]
 
     # 5. Walk-forward backtest
     print("\n5. Running walk-forward backtest...")
     fold_results: list[dict] = []
     all_ml_returns: list[float] = []
     all_baseline_returns: list[float] = []
-    all_predictions: list[float] = []
-    all_targets: list[float] = []
-    all_pred_dates: list[pd.Timestamp] = []
     trade_log: list[dict] = []
     ml_nav = initial_capital
     baseline_nav = initial_capital
@@ -285,8 +279,10 @@ def run_etf_ml_backtest(
         train_cutoff = all_dates[fold_start_idx]
         fold_test_dates = all_dates[fold_start_idx : fold_end_idx + 1]
 
-        print(f"\n  Fold {fold_idx + 1}: train through {train_cutoff.strftime('%Y-%m-%d')}, "
-              f"test {len(fold_test_dates)} days")
+        print(
+            f"\n  Fold {fold_idx + 1}: train through {train_cutoff.strftime('%Y-%m-%d')}, "
+            f"test {len(fold_test_dates)} days"
+        )
 
         # Train model on data up to train_cutoff
         train_data = build_training_data(
@@ -296,19 +292,23 @@ def run_etf_ml_backtest(
         )
 
         if train_data is None:
-            print(f"    Skipping fold — insufficient training data")
+            print("    Skipping fold — insufficient training data")
             continue
 
-        X_train, y_train, train_dates, train_symbols = train_data
+        X_train, y_train, train_dates, _train_symbols = train_data
 
         # Temporal split for validation within training window
         model, scores = train_model(
-            X_train, y_train, train_dates,
+            X_train,
+            y_train,
+            train_dates,
             params=params,
         )
 
         # Extract fold IC — linear_rank returns it in scores, LGBM needs manual compute
-        fold_ic = scores.get("train", {}).get("mean_rank_ic", None) if isinstance(scores, dict) else None
+        fold_ic = (
+            scores.get("train", {}).get("mean_rank_ic", None) if isinstance(scores, dict) else None
+        )
         if fold_ic is None:
             # LGBM (or other models) — compute rank IC from training predictions
             try:
@@ -323,7 +323,7 @@ def run_etf_ml_backtest(
         print(f"    Model trained: {len(X_train)} samples, train IC={fold_ic:.4f}")
 
         # Predict on fold test dates
-        for i, test_date in enumerate(fold_test_dates):
+        for _i, test_date in enumerate(fold_test_dates):
             if test_date not in all_dates:
                 continue
             date_idx = all_dates.index(test_date)
@@ -397,33 +397,39 @@ def run_etf_ml_backtest(
             if ml_ret is not None:
                 all_ml_returns.append(ml_ret)
                 ml_nav *= 1 + ml_ret
-                trade_log.append({
-                    "date": entry_date.strftime("%Y-%m-%d"),
-                    "fold": fold_idx + 1,
-                    "etfs": selected_ml,
-                    "return_pct": round(ml_ret * 100, 2),
-                })
+                trade_log.append(
+                    {
+                        "date": entry_date.strftime("%Y-%m-%d"),
+                        "fold": fold_idx + 1,
+                        "etfs": selected_ml,
+                        "return_pct": round(ml_ret * 100, 2),
+                    }
+                )
 
             if bl_ret is not None:
                 all_baseline_returns.append(bl_ret)
                 baseline_nav *= 1 + bl_ret
 
-        fold_results.append({
-            "fold": fold_idx + 1,
-            "train_end": train_cutoff.strftime("%Y-%m-%d"),
-            "test_days": len(fold_test_dates),
-            "train_ic": round(fold_ic, 4),
-            "train_samples": len(X_train),
-        })
+        fold_results.append(
+            {
+                "fold": fold_idx + 1,
+                "train_end": train_cutoff.strftime("%Y-%m-%d"),
+                "test_days": len(fold_test_dates),
+                "train_ic": round(fold_ic, 4),
+                "train_samples": len(X_train),
+            }
+        )
 
     # 6. Build results
     print("\n6. Computing metrics...")
     strategy_metrics = compute_advanced_metrics(
-        all_ml_returns, initial_capital,
+        all_ml_returns,
+        initial_capital,
         effective_trials=effective_trials,
     )
     baseline_metrics = compute_advanced_metrics(
-        all_baseline_returns, initial_capital,
+        all_baseline_returns,
+        initial_capital,
         effective_trials=1,
     )
 

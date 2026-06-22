@@ -45,14 +45,16 @@ def detect_suspicious_price_jumps(
         prev_close = float(close_series.shift(1).loc[worst_date])
         curr_close = float(close_series.loc[worst_date])
 
-        issues.append({
-            "symbol": symbol,
-            "suspicious_days": int(len(suspicious)),
-            "worst_jump_date": pd.Timestamp(worst_date),
-            "worst_close_to_close_return_pct": float(suspicious.loc[worst_date] * 100.0),
-            "previous_close": prev_close,
-            "current_close": curr_close,
-        })
+        issues.append(
+            {
+                "symbol": symbol,
+                "suspicious_days": len(suspicious),
+                "worst_jump_date": pd.Timestamp(worst_date),
+                "worst_close_to_close_return_pct": float(suspicious.loc[worst_date] * 100.0),
+                "previous_close": prev_close,
+                "current_close": curr_close,
+            }
+        )
 
     return sorted(
         issues,

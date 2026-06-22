@@ -57,9 +57,7 @@ def _load_hive_partitioned(
         return pd.DataFrame()
 
 
-def load_ths_hot(
-    trade_date: str, limit: int = 100
-) -> pd.DataFrame:
+def load_ths_hot(trade_date: str, limit: int = 100) -> pd.DataFrame:
     """Load 同花顺热榜 for a given trade date.
 
     Returns columns: ts_code, ts_name, rank, hot, concept, pct_change, rank_reason
@@ -69,8 +67,18 @@ def load_ths_hot(
     if not ths_dir.is_dir():
         return pd.DataFrame()
     return _load_hive_partitioned(
-        ths_dir, trade_date,
-        columns=["trade_date", "ts_code", "ts_name", "rank", "hot", "concept", "pct_change", "rank_reason"],
+        ths_dir,
+        trade_date,
+        columns=[
+            "trade_date",
+            "ts_code",
+            "ts_name",
+            "rank",
+            "hot",
+            "concept",
+            "pct_change",
+            "rank_reason",
+        ],
     ).head(limit)
 
 
@@ -84,10 +92,22 @@ def load_dc_concept(trade_date: str) -> pd.DataFrame:
     if not dc_dir.is_dir():
         return pd.DataFrame()
     return _load_hive_partitioned(
-        dc_dir, trade_date,
-        columns=["theme_code", "trade_date", "name", "pct_change", "hot", "sort",
-                 "strength", "z_t_num", "main_change", "lead_stock", "lead_stock_code",
-                 "lead_stock_pct_change"],
+        dc_dir,
+        trade_date,
+        columns=[
+            "theme_code",
+            "trade_date",
+            "name",
+            "pct_change",
+            "hot",
+            "sort",
+            "strength",
+            "z_t_num",
+            "main_change",
+            "lead_stock",
+            "lead_stock_code",
+            "lead_stock_pct_change",
+        ],
     )
 
 
@@ -101,7 +121,8 @@ def load_dc_concept_cons(trade_date: str) -> pd.DataFrame:
     if not cons_dir.is_dir():
         return pd.DataFrame()
     return _load_hive_partitioned(
-        cons_dir, trade_date,
+        cons_dir,
+        trade_date,
         columns=["ts_code", "name", "theme_code", "trade_date", "industry", "hot_num"],
     )
 
@@ -113,7 +134,8 @@ def load_kpl_concept_cons(trade_date: str) -> pd.DataFrame:
     if not kpl_dir.is_dir():
         return pd.DataFrame()
     return _load_hive_partitioned(
-        kpl_dir, trade_date,
+        kpl_dir,
+        trade_date,
         columns=["ts_code", "name", "con_name", "con_code", "trade_date", "desc", "hot_num"],
     )
 

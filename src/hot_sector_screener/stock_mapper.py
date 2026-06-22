@@ -158,12 +158,14 @@ class StockMapper:
                 match = self.dc_cons[self.dc_cons["ts_code"] == code]
                 if not match.empty:
                     name = str(match.iloc[0].get("name", ""))
-            result.append({
-                "ts_code": code,
-                "name": name,
-                "relevance": round(min(score / max(candidates.values()), 1.0), 3),
-                "source_topic": topic_name,
-            })
+            result.append(
+                {
+                    "ts_code": code,
+                    "name": name,
+                    "relevance": round(min(score / max(candidates.values()), 1.0), 3),
+                    "source_topic": topic_name,
+                }
+            )
 
         return result
 

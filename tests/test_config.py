@@ -1,4 +1,5 @@
 """Tests for config loading."""
+
 from __future__ import annotations
 
 from hot_sector_screener.config import default_config, load_config
@@ -65,5 +66,6 @@ universe:
 
     def test_load_nonexistent_raises(self):
         import pytest
+
         with pytest.raises(FileNotFoundError):
             load_config("/nonexistent/path/config.yml")

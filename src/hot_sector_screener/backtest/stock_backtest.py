@@ -35,6 +35,7 @@ from .metrics import (  # noqa: F401 — max_drawdown used by compute_metrics
 
 # ── private helpers ──
 
+
 def _fmt_date(date_str: str) -> str:
     """Convert YYYYMMDD → YYYY-MM-DD."""
     return f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:]}"
@@ -122,9 +123,9 @@ def _map_concepts_to_candidates(
     concept_to_stocks: dict[str, set[str]] = {}
     concept_names: dict[str, str] = {}  # concept_code → concept_name
     for _, row in kpl.iterrows():
-        cc = str(row.get("ts_code", "")).strip()      # concept code
-        sc = str(row.get("con_code", "")).strip()     # stock code
-        cn = str(row.get("name", "")).strip()         # concept name
+        cc = str(row.get("ts_code", "")).strip()  # concept code
+        sc = str(row.get("con_code", "")).strip()  # stock code
+        cn = str(row.get("name", "")).strip()  # concept name
         if cc and sc:
             concept_to_stocks.setdefault(cc, set()).add(sc)
         if cc and cn:
@@ -141,13 +142,13 @@ def _map_concepts_to_candidates(
                 matched = True
         if not matched:
             # 2. Try fuzzy match via kpl desc field (stock descriptions)
-            desc_match = kpl[kpl["desc"].str.contains(
-                re.escape(concept), case=False, na=False
-            )]
+            desc_match = kpl[kpl["desc"].str.contains(re.escape(concept), case=False, na=False)]
             if not desc_match.empty:
-                codes_from_desc = list(dict.fromkeys(
-                    desc_match["con_code"].astype(str).tolist()  # stock codes
-                ))[:stocks_per_concept]
+                codes_from_desc = list(
+                    dict.fromkeys(
+                        desc_match["con_code"].astype(str).tolist()  # stock codes
+                    )
+                )[:stocks_per_concept]
                 candidate_codes.extend(codes_from_desc)
 
     # Deduplicate while preserving order
@@ -271,10 +272,7 @@ def _build_result(
     # CSI 300 proxy: market-average daily pct_chg (no real CSI 300 data in lake)
     bm_ret = _benchmark_market_return(sampled, all_dates)
     total_ret = float(np.prod(1 + np.array(daily_returns)) - 1) if daily_returns else 0.0
-    if bm_ret is not None and daily_returns:
-        excess = total_ret - bm_ret["total_return"]
-    else:
-        excess = None
+    excess = total_ret - bm_ret["total_return"] if bm_ret is not None and daily_returns else None
 
     # Compute beta / alpha vs benchmark proxy
     beta = None
@@ -308,7 +306,11 @@ def _build_result(
                     beta = round(cov / var, 3)
                     bm_total = float(np.prod(1 + b) - 1)
                     bm_ann = float((1 + bm_total) ** (252 / min_len) - 1) if min_len > 0 else 0.0
-                    strat_ann = float((1 + total_ret) ** (252 / len(daily_returns)) - 1) if daily_returns else 0.0
+                    strat_ann = (
+                        float((1 + total_ret) ** (252 / len(daily_returns)) - 1)
+                        if daily_returns
+                        else 0.0
+                    )
                     alpha = round((strat_ann - beta * bm_ann) * 100, 2)
 
     return {
@@ -334,6 +336,7 @@ def _build_result(
 
 
 # ── public API ──
+
 
 def run_stock_backtest(
     start_date: str = "2024-10-14",
@@ -378,17 +381,13 @@ def run_stock_backtest(
         dt = _fmt_date(date_str)
 
         # 2a. Extract top concepts
-        top_c_list, ch_entry = _extract_top_concepts(
-            dt, top_n_hot_stocks, top_concepts
-        )
+        top_c_list, ch_entry = _extract_top_concepts(dt, top_n_hot_stocks, top_concepts)
         if top_c_list is None or ch_entry is None:
             continue
         concept_history.append(ch_entry)
 
         # 2b. Map concepts to candidate stocks
-        candidate_codes = _map_concepts_to_candidates(
-            top_c_list, dt, stocks_per_concept
-        )
+        candidate_codes = _map_concepts_to_candidates(top_c_list, dt, stocks_per_concept)
         if not candidate_codes:
             continue
 

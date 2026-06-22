@@ -43,9 +43,7 @@ class Screener:
         self.topics_per_run = uc.get("topics_per_run", 5)
         self.stocks_per_topic = uc.get("stocks_per_topic", 25)
 
-        self.classifier = TopicClassifier(
-            enabled=self.config.get("llm", {}).get("enabled", True)
-        )
+        self.classifier = TopicClassifier(enabled=self.config.get("llm", {}).get("enabled", True))
 
     def scan(self, trade_date: str | None = None) -> dict[str, Any]:
         """Collect hotspot data without LLM classification.

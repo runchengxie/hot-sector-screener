@@ -9,16 +9,42 @@ from hot_sector_screener.stock_mapper import StockMapper, apply_liquidity_filter
 class TestStockMapper:
     @pytest.fixture
     def sample_dc_cons(self):
-        return pd.DataFrame([
-            {"ts_code": "300308.SZ", "name": "中际旭创", "theme_code": "CPO",
-             "trade_date": "20260619", "industry": "通信", "hot_num": 5},
-            {"ts_code": "300502.SZ", "name": "新易盛", "theme_code": "CPO",
-             "trade_date": "20260619", "industry": "通信", "hot_num": 4},
-            {"ts_code": "688981.SH", "name": "中芯国际", "theme_code": "半导体",
-             "trade_date": "20260619", "industry": "电子", "hot_num": 3},
-            {"ts_code": "002371.SZ", "name": "北方华创", "theme_code": "半导体",
-             "trade_date": "20260619", "industry": "电子", "hot_num": 3},
-        ])
+        return pd.DataFrame(
+            [
+                {
+                    "ts_code": "300308.SZ",
+                    "name": "中际旭创",
+                    "theme_code": "CPO",
+                    "trade_date": "20260619",
+                    "industry": "通信",
+                    "hot_num": 5,
+                },
+                {
+                    "ts_code": "300502.SZ",
+                    "name": "新易盛",
+                    "theme_code": "CPO",
+                    "trade_date": "20260619",
+                    "industry": "通信",
+                    "hot_num": 4,
+                },
+                {
+                    "ts_code": "688981.SH",
+                    "name": "中芯国际",
+                    "theme_code": "半导体",
+                    "trade_date": "20260619",
+                    "industry": "电子",
+                    "hot_num": 3,
+                },
+                {
+                    "ts_code": "002371.SZ",
+                    "name": "北方华创",
+                    "theme_code": "半导体",
+                    "trade_date": "20260619",
+                    "industry": "电子",
+                    "hot_num": 3,
+                },
+            ]
+        )
 
     def test_map_single_topic(self, sample_dc_cons):
         mapper = StockMapper(sample_dc_cons)
