@@ -1,3 +1,3 @@
 [submodule "vendor/a-share-factor-core"]
 	path = vendor/a-share-factor-core
-	url = git@github.com:runchengxie/a-share-factor-core.git
+	url = https://github.com/runchengxie/a-share-factor-core.git
