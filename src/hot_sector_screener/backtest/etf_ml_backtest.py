@@ -307,7 +307,19 @@ def run_etf_ml_backtest(
             params=params,
         )
 
-        fold_ic = scores.get("train", {}).get("mean_rank_ic", 0.0)
+        # Extract fold IC — linear_rank returns it in scores, LGBM needs manual compute
+        fold_ic = scores.get("train", {}).get("mean_rank_ic", None) if isinstance(scores, dict) else None
+        if fold_ic is None:
+            # LGBM (or other models) — compute rank IC from training predictions
+            try:
+                if hasattr(model, "predict"):
+                    train_preds = model.predict(X_train)
+                    ic_result = compute_daily_rank_ic(train_preds, y_train, train_dates)
+                    fold_ic = ic_result["mean_ic"]
+                else:
+                    fold_ic = 0.0
+            except Exception:
+                fold_ic = 0.0
         print(f"    Model trained: {len(X_train)} samples, train IC={fold_ic:.4f}")
 
         # Predict on fold test dates
@@ -327,7 +339,7 @@ def run_etf_ml_backtest(
 
             concept_dims = _build_concept_features_per_date(concepts)
 
-            # Build feature vectors for all ETFs
+            # Build feature vectors for all ETFs (technical features only)
             features_rows: dict[str, dict[str, float]] = {}
             for sym in ETF_METADATA:
                 feat_dict = _merge_features(
@@ -339,11 +351,17 @@ def run_etf_ml_backtest(
             if len(features_rows) < top_k:
                 continue
 
-            # Predict with model
+            # Predict with model — use model's own feature names for consistency
             X_infer = pd.DataFrame.from_dict(features_rows, orient="index")
+            # Keep only the feature columns the model was trained on
+            model_feat_cols = (
+                getattr(model, "feature_names", None)
+                if hasattr(model, "feature_names")
+                else feat_cols
+            )
             X_infer = preprocess_inference_features(
                 X_infer,
-                feature_names=all_feature_cols,
+                feature_names=model_feat_cols,
                 cross_sectional_scaling=True,
             )
 
