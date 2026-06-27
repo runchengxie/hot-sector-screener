@@ -41,7 +41,7 @@ dev = [
 hotsector = "hot_sector_screener.cli:main"
 
 [tool.uv.sources]
-a-share-factor-core = { path = "vendor/a-share-factor-core" }
+a-share-factor-core = { git = "ssh://git@github.com/runchengxie/a-share-factor-core.git", rev = "4572a3591962b8be891fb25e3604ae0097b54f5b" }
 
 [tool.setuptools]
 package-dir = {"" = "src"}
@@ -56,7 +56,6 @@ testpaths = ["tests"]
 [tool.ruff]
 line-length = 100
 target-version = "py310"
-extend-exclude = ["vendor"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM", "C4", "RET", "RUF", "C90"]

@@ -17,7 +17,7 @@ resolution-markers = [
 [[package]]
 name = "a-share-factor-core"
 version = "0.1.0"
-source = { directory = "vendor/a-share-factor-core" }
+source = { git = "ssh://git@github.com/runchengxie/a-share-factor-core.git?rev=4572a3591962b8be891fb25e3604ae0097b54f5b#4572a3591962b8be891fb25e3604ae0097b54f5b" }
 dependencies = [
     { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
@@ -28,19 +28,6 @@ dependencies = [
     { name = "scipy", version = "1.18.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
     { name = "ta" },
 ]
-
-[package.metadata]
-requires-dist = [
-    { name = "lightgbm", marker = "extra == 'ml'", specifier = ">=4.3" },
-    { name = "numpy", specifier = ">=1.26" },
-    { name = "pandas", specifier = ">=2.2" },
-    { name = "pyright", marker = "extra == 'dev'", specifier = ">=1.1.394" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.3" },
-    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.8.0" },
-    { name = "scipy", specifier = ">=1.13" },
-    { name = "ta", specifier = ">=0.11" },
-]
-provides-extras = ["ml", "dev"]
 
 [[package]]
 name = "colorama"
@@ -96,7 +83,7 @@ ml = [
 
 [package.metadata]
 requires-dist = [
-    { name = "a-share-factor-core", directory = "vendor/a-share-factor-core" },
+    { name = "a-share-factor-core", git = "ssh://git@github.com/runchengxie/a-share-factor-core.git?rev=4572a3591962b8be891fb25e3604ae0097b54f5b" },
     { name = "lightgbm", marker = "extra == 'ml'", specifier = ">=4.3" },
     { name = "numpy", specifier = ">=1.26" },
     { name = "pandas", specifier = ">=2.2" },

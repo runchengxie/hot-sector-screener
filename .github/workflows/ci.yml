@@ -12,10 +12,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Init submodules
+      - name: Configure private Git dependencies
         run: |
-          git config --global url."https://x-access-token:${{ secrets.A_SHARE_FACTOR_CORE_READ_TOKEN }}@github.com/".insteadOf "https://github.com/"
-          git submodule update --init --recursive
+          git config --global url."https://x-access-token:${{ secrets.A_SHARE_FACTOR_CORE_READ_TOKEN }}@github.com/".insteadOf "ssh://git@github.com/"
       - name: Install uv
         uses: astral-sh/setup-uv@v5
       - name: Set up Python
@@ -32,10 +31,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Init submodules
+      - name: Configure private Git dependencies
         run: |
-          git config --global url."https://x-access-token:${{ secrets.A_SHARE_FACTOR_CORE_READ_TOKEN }}@github.com/".insteadOf "https://github.com/"
-          git submodule update --init --recursive
+          git config --global url."https://x-access-token:${{ secrets.A_SHARE_FACTOR_CORE_READ_TOKEN }}@github.com/".insteadOf "ssh://git@github.com/"
       - name: Install uv
         uses: astral-sh/setup-uv@v5
       - name: Set up Python
