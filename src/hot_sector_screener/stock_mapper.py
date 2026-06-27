@@ -64,12 +64,12 @@ class StockMapper:
                 if name and code:
                     self._dc_name_lookup.setdefault(name, set()).add(code)
 
-        # Build lookup from kpl: con_name → set of ts_code
+        # Build lookup from kpl: con_name → set of con_code (stock code)
         self._kpl_lookup: dict[str, set[str]] = {}
         if not self.kpl_cons.empty and "con_code" in self.kpl_cons.columns:
             for _, row in self.kpl_cons.iterrows():
                 key = str(row.get("con_name", "")).strip()
-                code = _normalize_ts_code(str(row.get("ts_code", "")))
+                code = _normalize_ts_code(str(row.get("con_code", "")))
                 if key and code:
                     self._kpl_lookup.setdefault(key, set()).add(code)
 
@@ -143,7 +143,7 @@ class StockMapper:
             )
             if match_mask.any():
                 for _, row in self.kpl_cons[match_mask].iterrows():
-                    code = _normalize_ts_code(str(row.get("ts_code", "")))
+                    code = _normalize_ts_code(str(row.get("con_code") or row.get("ts_code", "")))
                     if code:
                         candidates[code] = candidates.get(code, 0.0) + 0.7
 

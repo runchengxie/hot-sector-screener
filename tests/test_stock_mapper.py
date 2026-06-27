@@ -81,6 +81,54 @@ class TestStockMapper:
         stocks = mapper.map_topics(topics, max_total=10)
         assert len(stocks) == 2  # same 2 stocks, no duplicates
 
+    def test_kpl_mapping_uses_constituent_stock_code(self):
+        kpl_cons = pd.DataFrame(
+            [
+                {
+                    "ts_code": "000025.KP",
+                    "con_name": "AI算力",
+                    "con_code": "000977.SZ",
+                    "desc": "服务器算力",
+                },
+                {
+                    "ts_code": "000025.KP",
+                    "con_name": "AI算力",
+                    "con_code": "603019.SH",
+                    "desc": "服务器算力",
+                },
+            ]
+        )
+        mapper = StockMapper(pd.DataFrame(), kpl_cons)
+
+        stocks = mapper.map_topic_to_stocks(
+            {"topic": "AI算力", "related_concepts": ["AI算力"]},
+            max_stocks=10,
+        )
+
+        codes = {s["ts_code"] for s in stocks}
+        assert codes == {"000977.SZ", "603019.SH"}
+        assert "000025.KP" not in codes
+
+    def test_kpl_description_fallback_uses_constituent_stock_code(self):
+        kpl_cons = pd.DataFrame(
+            [
+                {
+                    "ts_code": "000025.KP",
+                    "con_name": "算力租赁",
+                    "con_code": "000977.SZ",
+                    "desc": "AI服务器供应商",
+                },
+            ]
+        )
+        mapper = StockMapper(pd.DataFrame(), kpl_cons)
+
+        stocks = mapper.map_topic_to_stocks(
+            {"topic": "AI服务器", "related_concepts": []},
+            max_stocks=10,
+        )
+
+        assert [s["ts_code"] for s in stocks] == ["000977.SZ"]
+
     def test_liquidity_filter_passthrough(self):
         stocks = [
             {"ts_code": "300308.SZ", "name": "中际旭创", "relevance": 0.9},

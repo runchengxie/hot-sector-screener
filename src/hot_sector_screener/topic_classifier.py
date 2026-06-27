@@ -226,11 +226,12 @@ class TopicClassifier:
         topics: list[dict[str, Any]] = []
         seen: set[str] = set()
 
-        # From dc_concepts — compute max strength for normalization
-        strengths = [float(c.get("strength", 0)) for c in dc_concepts if c.get("strength")]
+        # From dc_concepts — sort by hot, take top 5
+        sorted_dc = sorted(dc_concepts, key=lambda c: float(c.get("hot", 0)), reverse=True)
+        strengths = [float(c.get("strength", 0)) for c in sorted_dc if c.get("strength")]
         max_strength = max(strengths) if strengths else 1.0
 
-        for c in dc_concepts[:5]:
+        for c in sorted_dc[:5]:
             name = c.get("name", "")
             if name and name not in seen:
                 seen.add(name)
@@ -245,12 +246,20 @@ class TopicClassifier:
                     }
                 )
 
-        # From ths_hot stock concepts
+        # From ths_hot stock concepts — parse JSON array format
         concept_freq: dict[str, float] = {}
         for s in ths_hot_stocks:
             concept_str = s.get("concept", "")
-            for c in concept_str.split(","):
-                c = c.strip()
+            if not concept_str:
+                continue
+            try:
+                concepts = json.loads(concept_str) if isinstance(concept_str, str) else concept_str
+            except (json.JSONDecodeError, TypeError):
+                concepts = [c.strip() for c in concept_str.split(",") if c.strip()]
+            if not isinstance(concepts, list):
+                concepts = [concepts]
+            for c in concepts:
+                c = str(c).strip()
                 if c:
                     concept_freq[c] = concept_freq.get(c, 0) + 1
 

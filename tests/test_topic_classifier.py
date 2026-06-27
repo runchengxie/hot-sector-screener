@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
-from hot_sector_screener.topic_classifier import build_topic_prompt, parse_topic_response
+from hot_sector_screener.topic_classifier import (
+    TopicClassifier,
+    build_topic_prompt,
+    parse_topic_response,
+)
 
 
 class TestTopicClassifier:
@@ -63,3 +67,28 @@ class TestTopicClassifier:
     def test_parse_gibberish_returns_empty_list(self):
         topics = parse_topic_response("Sorry, I cannot help with that.")
         assert topics == []
+
+    def test_fallback_topics_sorts_dc_concepts_by_hot(self):
+        topics = TopicClassifier(enabled=False).classify(
+            ths_hot_stocks=[],
+            dc_concepts=[
+                {"name": "低热度", "hot": "1", "strength": "10"},
+                {"name": "高热度", "hot": "99", "strength": "5"},
+            ],
+        )
+
+        assert topics[0]["topic"] == "高热度"
+
+    def test_fallback_topics_parses_json_concept_arrays(self):
+        topics = TopicClassifier(enabled=False).classify(
+            ths_hot_stocks=[
+                {"concept": '["AI算力", "CPO"]'},
+                {"concept": '["AI算力", "机器人"]'},
+                {"concept": "CPO,光通信"},
+            ],
+            dc_concepts=[],
+        )
+
+        by_topic = {topic["topic"]: topic for topic in topics}
+        assert by_topic["AI算力"]["weight"] == 0.2
+        assert by_topic["CPO"]["weight"] == 0.2
