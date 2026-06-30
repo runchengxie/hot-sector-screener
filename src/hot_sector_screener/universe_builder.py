@@ -8,6 +8,8 @@ from typing import Any
 import pandas as pd
 
 from .data_sources.platform import (
+    list_available_dates,
+    load_daily_data,
     load_dc_concept,
     load_dc_concept_cons,
     load_hotspot_features,
@@ -16,6 +18,7 @@ from .data_sources.platform import (
 )
 from .data_sources.rotation_signal import load_industry_signal
 from .paths import ensure_output_dir
+from .quality_report import build_candidate_quality_report
 from .stock_mapper import StockMapper, apply_liquidity_filter
 from .topic_classifier import TopicClassifier, build_topic_prompt
 
@@ -32,6 +35,29 @@ def _df_to_dicts(df: pd.DataFrame) -> list[dict[str, Any]]:
     return df.fillna("").to_dict(orient="records")
 
 
+def _load_optional_daily(date_str: str) -> pd.DataFrame:
+    try:
+        return load_daily_data(date_str)
+    except RuntimeError:
+        return pd.DataFrame()
+
+
+def _future_daily_frames(
+    date_int: str,
+    horizons: tuple[int, ...] = (1, 3, 5),
+) -> dict[int, pd.DataFrame]:
+    try:
+        dates = list_available_dates("daily")
+    except RuntimeError:
+        return {}
+    future_dates = [d for d in dates if d > date_int]
+    frames: dict[int, pd.DataFrame] = {}
+    for horizon in horizons:
+        if len(future_dates) >= horizon:
+            frames[horizon] = _load_optional_daily(future_dates[horizon - 1])
+    return frames
+
+
 class Screener:
     """Main builder: collect data → classify topics → map stocks → output universe."""
 
@@ -42,6 +68,10 @@ class Screener:
         self.min_candidates = uc.get("min_candidates", 30)
         self.topics_per_run = uc.get("topics_per_run", 5)
         self.stocks_per_topic = uc.get("stocks_per_topic", 25)
+        self.min_daily_amount_rank_pct = uc.get("min_daily_amount_rank_pct", 80)
+        self.max_price = uc.get("max_price", 200.0)
+        self.min_price = uc.get("min_price", 2.0)
+        self.max_st_allow = uc.get("max_st_allow", False)
 
         self.classifier = TopicClassifier(enabled=self.config.get("llm", {}).get("enabled", True))
 
@@ -59,6 +89,7 @@ class Screener:
         kpl_cons = load_kpl_concept_cons(date_str)
         hf = load_hotspot_features(date_str)
         ind_signal = load_industry_signal()
+        daily = _load_optional_daily(date_str)
 
         return {
             "date": date_str,
@@ -83,6 +114,10 @@ class Screener:
             "hotspot_features": {
                 "rows": len(hf),
                 "columns": list(hf.columns) if not hf.empty else [],
+            },
+            "daily": {
+                "rows": len(daily),
+                "columns": list(daily.columns) if not daily.empty else [],
             },
             "industry_signal": {
                 "available": len(ind_signal) > 0,
@@ -147,6 +182,7 @@ class Screener:
         dc_cons = load_dc_concept_cons(date_str)
         kpl_cons = load_kpl_concept_cons(date_str)
         ind_signal = load_industry_signal()
+        daily = _load_optional_daily(date_str)
 
         # 2. Classify topics (or use pre-classified)
         ths_stocks = _df_to_dicts(ths)
@@ -173,7 +209,19 @@ class Screener:
         )
 
         # 4. Apply filters
-        filtered = apply_liquidity_filter(raw_stocks)
+        filtered = apply_liquidity_filter(
+            raw_stocks,
+            daily_df=daily,
+            min_amount_rank_pct=self.min_daily_amount_rank_pct,
+            max_price=self.max_price,
+            min_price=self.min_price,
+            allow_st=self.max_st_allow,
+        )
+        quality_report = build_candidate_quality_report(
+            filtered,
+            daily,
+            _future_daily_frames(date_int),
+        )
 
         # 5. Build output
         result = {
@@ -187,14 +235,20 @@ class Screener:
                 "max_candidates": self.max_candidates,
                 "min_candidates": self.min_candidates,
                 "llm_enabled": self.classifier.enabled,
+                "min_daily_amount_rank_pct": self.min_daily_amount_rank_pct,
+                "max_price": self.max_price,
+                "min_price": self.min_price,
+                "max_st_allow": self.max_st_allow,
             },
             "data_sources": {
                 "ths_hot_available": len(ths) > 0,
                 "dc_concept_available": len(dc) > 0,
                 "dc_concept_cons_available": len(dc_cons) > 0,
                 "kpl_concept_cons_available": len(kpl_cons) > 0,
+                "daily_available": len(daily) > 0,
                 "industry_signal_available": len(ind_signal) > 0,
             },
+            "quality_report": quality_report,
         }
 
         # 6. Write output
@@ -211,6 +265,10 @@ class Screener:
         if filtered:
             csv_data = pd.DataFrame(filtered)
             csv_data.to_csv(csv_path, index=False)
+
+        quality_path = out_dir / "candidate_quality.json"
+        with open(quality_path, "w", encoding="utf-8") as f:
+            json.dump(quality_report, f, ensure_ascii=False, indent=2, default=str)
 
         # Run config
         config_path = out_dir / "run_config.json"
@@ -234,6 +292,7 @@ class Screener:
             "output_files": {
                 "json": str(json_path),
                 "csv": str(csv_path) if filtered else None,
+                "quality": str(quality_path),
             },
         }
         lineage_path = out_dir / "lineage.json"

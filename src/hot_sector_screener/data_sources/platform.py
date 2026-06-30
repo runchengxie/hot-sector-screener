@@ -173,6 +173,7 @@ def list_available_dates(source: str = "ths_hot") -> list[str]:
         "dc_concept_cons": root / "assets" / "tushare" / "a_share" / "dc_concept_cons",
         "kpl_concept_cons": root / "assets" / "tushare" / "a_share" / "kpl_concept_cons",
         "hotspot_features": root / "assets" / "tushare" / "a_share" / "hotspot_features",
+        "daily": root / "assets" / "tushare" / "a_share" / "daily",
     }
     source_dir = source_map.get(source)
     if source_dir is None or not source_dir.is_dir():
@@ -189,7 +190,14 @@ def list_available_dates(source: str = "ths_hot") -> list[str]:
 
 def summarize_data_coverage() -> dict[str, Any]:
     """Summarise what hotspot data is available in the data lake."""
-    sources = ["ths_hot", "dc_concept", "dc_concept_cons", "kpl_concept_cons", "hotspot_features"]
+    sources = [
+        "ths_hot",
+        "dc_concept",
+        "dc_concept_cons",
+        "kpl_concept_cons",
+        "hotspot_features",
+        "daily",
+    ]
     result: dict[str, Any] = {}
     for source in sources:
         dates = list_available_dates(source)

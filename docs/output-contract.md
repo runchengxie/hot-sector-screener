@@ -25,7 +25,12 @@
       "ts_code": "300308.SZ",
       "name": "中际旭创",
       "relevance": 0.95,
-      "source_topics": ["CPO光通信"]
+      "score": 1.42,
+      "liquidity_score": 0.93,
+      "amount_rank_pct": 93.2,
+      "close": 120.5,
+      "source_topics": ["CPO光通信"],
+      "source_concepts": ["CPO概念"]
     }
   ],
   "universe_size": 85,
@@ -39,7 +44,20 @@
     "dc_concept_available": true,
     "dc_concept_cons_available": true,
     "kpl_concept_cons_available": true,
+    "daily_available": true,
     "industry_signal_available": false
+  },
+  "quality_report": {
+    "available": true,
+    "horizons": {
+      "t_plus_1": {
+        "available": true,
+        "count": 85,
+        "mean_return_pct": 0.82,
+        "median_return_pct": 0.31,
+        "hit_rate_pct": 57.6
+      }
+    }
   },
   "output_dir": "/home/richard/code/hot-sector-screener/outputs/20260619"
 }
@@ -57,6 +75,7 @@
 | `universe_size` | int | 候选池股票数量，通常在 50-100 只之间 |
 | `config_snapshot` | object | 运行时的配置快照 |
 | `data_sources` | object | 各数据源可用性标记 |
+| `quality_report` | object | 候选池后续表现回看；后续行情尚不可用时 `available=false` |
 
 ### 候选股票字段
 
@@ -65,11 +84,20 @@
 | `ts_code` | string | 股票代码，例如 `300308.SZ` |
 | `name` | string | 股票名称 |
 | `relevance` | float | 与主题的相关性得分，0-1 之间 |
+| `score` | float | 主题权重、概念强度、成分热度等聚合后的原始分 |
+| `liquidity_score` | float | 流动性分，来自成交额分位，0-1 之间 |
+| `amount_rank_pct` | float | 当日成交额在全市场中的百分位 |
+| `close` | float | 当日收盘价，用于价格过滤 |
 | `source_topics` | array | 该股票匹配到的主题列表 |
+| `source_concepts` | array | 该股票命中的标准化概念 |
 
 ## candidate_universe.csv
 
 候选股票的表格化输出，仅包含 `candidate_universe` 数组中的字段。适合直接导入其他工具或 Excel 查看。
+
+## candidate_quality.json
+
+候选池质量回看。若数据湖中已有后续交易日的日线数据，会输出 T+1/T+3/T+5 的平均收益、中位数收益、胜率和样本数；否则 `available=false` 并给出 `reason`。
 
 ## lineage.json
 
@@ -88,7 +116,8 @@
   "universe_size": 85,
   "output_files": {
     "json": "outputs/20260619/candidate_universe.json",
-    "csv": "outputs/20260619/candidate_universe.csv"
+    "csv": "outputs/20260619/candidate_universe.csv",
+    "quality": "outputs/20260619/candidate_quality.json"
   }
 }
 ```

@@ -173,6 +173,25 @@ class TestScreenerBuildUniverse:
                 "hot_sector_screener.universe_builder.load_industry_signal",
                 return_value=pd.DataFrame(),
             ),
+            patch(
+                "hot_sector_screener.universe_builder.load_daily_data",
+                return_value=pd.DataFrame(
+                    [
+                        {
+                            "ts_code": "300308.SZ",
+                            "close": 100,
+                            "amount": 100000,
+                            "high": 102,
+                            "low": 99,
+                            "pct_chg": 1.0,
+                        }
+                    ]
+                ),
+            ),
+            patch(
+                "hot_sector_screener.universe_builder.list_available_dates",
+                return_value=["20260619", "20260620"],
+            ),
         ):
             screener = Screener()
             result = screener.build_universe(
@@ -185,6 +204,8 @@ class TestScreenerBuildUniverse:
             assert (tmp_path / "candidate_universe.json").exists()
             assert (tmp_path / "run_config.json").exists()
             assert (tmp_path / "lineage.json").exists()
+            assert (tmp_path / "candidate_quality.json").exists()
+            assert "quality_report" in result
             assert result["output_dir"] == str(tmp_path)
 
 

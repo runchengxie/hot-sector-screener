@@ -129,6 +129,38 @@ class TestStockMapper:
 
         assert [s["ts_code"] for s in stocks] == ["000977.SZ"]
 
+    def test_alias_concept_maps_to_canonical_constituents(self):
+        dc_concepts = pd.DataFrame(
+            [
+                {
+                    "theme_code": "AI_CHIP",
+                    "name": "AI芯片",
+                    "strength": 80,
+                    "hot": 60,
+                    "pct_change": 2.5,
+                }
+            ]
+        )
+        dc_cons = pd.DataFrame(
+            [
+                {
+                    "ts_code": "688256.SH",
+                    "name": "寒武纪",
+                    "theme_code": "AI_CHIP",
+                    "hot_num": 5,
+                }
+            ]
+        )
+        mapper = StockMapper(dc_cons, dc_concept_df=dc_concepts)
+
+        stocks = mapper.map_topic_to_stocks(
+            {"topic": "GPU", "weight": 0.8, "related_concepts": ["GPU概念"]},
+            max_stocks=10,
+        )
+
+        assert [s["ts_code"] for s in stocks] == ["688256.SH"]
+        assert stocks[0]["source_concepts"] == ["AI芯片"]
+
     def test_liquidity_filter_passthrough(self):
         stocks = [
             {"ts_code": "300308.SZ", "name": "中际旭创", "relevance": 0.9},
@@ -136,3 +168,60 @@ class TestStockMapper:
         ]
         filtered = apply_liquidity_filter(stocks)
         assert len(filtered) == 2
+
+    def test_liquidity_filter_applies_price_st_amount_and_one_price_limits(self):
+        stocks = [
+            {"ts_code": "300308.SZ", "name": "中际旭创", "relevance": 1.0},
+            {"ts_code": "300502.SZ", "name": "新易盛", "relevance": 0.9},
+            {"ts_code": "000001.SZ", "name": "ST平安", "relevance": 0.8},
+            {"ts_code": "600000.SH", "name": "浦发银行", "relevance": 0.7},
+        ]
+        daily = pd.DataFrame(
+            [
+                {
+                    "ts_code": "300308.SZ",
+                    "close": 120,
+                    "amount": 5000,
+                    "high": 125,
+                    "low": 118,
+                    "pct_chg": 3,
+                },
+                {
+                    "ts_code": "300502.SZ",
+                    "close": 210,
+                    "amount": 6000,
+                    "high": 215,
+                    "low": 205,
+                    "pct_chg": 2,
+                },
+                {
+                    "ts_code": "000001.SZ",
+                    "close": 12,
+                    "amount": 7000,
+                    "high": 12.5,
+                    "low": 11.8,
+                    "pct_chg": 1,
+                },
+                {
+                    "ts_code": "600000.SH",
+                    "close": 10,
+                    "amount": 8000,
+                    "high": 10,
+                    "low": 10,
+                    "pct_chg": 10,
+                },
+            ]
+        )
+
+        filtered = apply_liquidity_filter(
+            stocks,
+            daily_df=daily,
+            min_amount_rank_pct=20,
+            max_price=200,
+            min_price=2,
+            allow_st=False,
+        )
+
+        assert [s["ts_code"] for s in filtered] == ["300308.SZ"]
+        assert filtered[0]["liquidity_score"] > 0
+        assert filtered[0]["raw_relevance"] == 1.0

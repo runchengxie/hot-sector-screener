@@ -17,7 +17,7 @@ from __future__ import annotations
 import os
 from collections import Counter
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol, cast
 
 import pandas as pd
 
@@ -39,6 +39,10 @@ from .etf_backtest import (
 from .metrics import compute_advanced_metrics
 
 ROTATION_ROOT = Path(os.environ.get("ETF_ROTATION_ROOT", "/home/richard/code/guan-etf-rotation-v3"))
+
+
+class _PredictModel(Protocol):
+    def predict(self, features: pd.DataFrame) -> Any: ...
 
 
 # ── ETF data loading ──
@@ -237,7 +241,7 @@ def run_etf_ml_backtest(  # noqa: C901
 
     # 4. Build walk-forward folds
     print("\n4. Building walk-forward folds...")
-    all_dates = [pd.Timestamp(f"{d[:4]}-{d[4:6]}-{d[6:]}") for d in date_list]
+    all_dates = [cast(pd.Timestamp, pd.Timestamp(f"{d[:4]}-{d[4:6]}-{d[6:]}")) for d in date_list]
 
     params = dict(DEFAULT_STRATEGY_PARAMS)
     params.update(
@@ -313,7 +317,7 @@ def run_etf_ml_backtest(  # noqa: C901
             # LGBM (or other models) — compute rank IC from training predictions
             try:
                 if hasattr(model, "predict"):
-                    train_preds = model.predict(X_train)
+                    train_preds = cast(_PredictModel, model).predict(X_train)
                     ic_result = compute_daily_rank_ic(train_preds, y_train, train_dates)
                     fold_ic = ic_result["mean_ic"]
                 else:
@@ -342,8 +346,11 @@ def run_etf_ml_backtest(  # noqa: C901
             # Build feature vectors for all ETFs (technical features only)
             features_rows: dict[str, dict[str, float]] = {}
             for sym in ETF_METADATA:
+                tech_feature_frame = tech_features.get(sym)
+                if tech_feature_frame is None:
+                    continue
                 feat_dict = _merge_features(
-                    sym, tech_features.get(sym), concept_dims, test_date, all_dims
+                    sym, tech_feature_frame, concept_dims, test_date, all_dims
                 )
                 if feat_dict is not None:
                     features_rows[sym] = feat_dict
@@ -365,8 +372,8 @@ def run_etf_ml_backtest(  # noqa: C901
                 cross_sectional_scaling=True,
             )
 
-            if isinstance(model, object) and hasattr(model, "predict"):
-                predictions = model.predict(X_infer)
+            if hasattr(model, "predict"):
+                predictions = cast(_PredictModel, model).predict(X_infer)
             else:
                 continue
 
