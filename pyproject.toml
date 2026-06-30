@@ -32,6 +32,7 @@ dev = [
   "pytest>=8.3",
   "pyright>=1.1.394",
   "ruff>=0.8.0",
+  "ty>=0.0.55",
   "pyarrow>=14.0",
 ]
 # LLM-based topic classification requires `hermes-tools` (built-in to Hermes Agent)
@@ -48,6 +49,10 @@ package-dir = {"" = "src"}
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.ty.src]
+include = ["src"]
+exclude = ["tests/"]
 
 [tool.pytest.ini_options]
 addopts = "-ra"
