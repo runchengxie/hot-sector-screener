@@ -30,7 +30,7 @@ ml = [
 ]
 dev = [
   "pytest>=8.3",
-  "pyright>=1.1.394",
+  "basedpyright>=1.39.9",
   "ruff>=0.8.0",
   "ty>=0.0.55",
   "pyarrow>=14.0",
@@ -75,7 +75,7 @@ max-complexity = 15
 line-ending = "lf"
 quote-style = "double"
 
-[tool.pyright]
+[tool.basedpyright]
 include = ["src", "tests"]
 exclude = ["**/.venv", "outputs", "data"]
 pythonVersion = "3.10"

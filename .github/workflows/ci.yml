@@ -35,8 +35,8 @@ jobs:
       - name: Run tests
         run: uv run --extra dev python -m pytest
 
-  quality-preview:
-    name: Lint and Type Preview
+  quality:
+    name: Quality
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -64,6 +64,8 @@ jobs:
         run: uv run --extra dev ruff format --check .
       - name: Ruff lint
         run: uv run --extra dev ruff check .
-      - name: Pyright
+      - name: ty
+        run: uv run --extra dev ty check
+      - name: BasedPyright advisory
         continue-on-error: true
-        run: uv run --extra dev pyright
+        run: uv run --extra dev python -m basedpyright
