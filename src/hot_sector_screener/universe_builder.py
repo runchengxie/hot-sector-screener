@@ -7,6 +7,8 @@ from typing import Any
 
 import pandas as pd
 
+from .confidence import apply_candidate_confidence
+from .daily_confirmation import apply_daily_confirmation_overlay, load_daily_history
 from .data_sources.platform import (
     list_available_dates,
     load_daily_data,
@@ -17,6 +19,7 @@ from .data_sources.platform import (
     load_ths_hot,
 )
 from .data_sources.rotation_signal import load_industry_signal
+from .outcome_evaluation import build_candidate_outcome_report
 from .paths import ensure_output_dir
 from .quality_report import build_candidate_quality_report
 from .ranking import apply_hotspot_feature_overlay
@@ -60,6 +63,15 @@ def _future_daily_frames(
     return frames
 
 
+def _future_daily_sequence(date_int: str, max_horizon: int = 5) -> list[pd.DataFrame]:
+    try:
+        dates = list_available_dates("daily")
+    except RuntimeError:
+        return []
+    future_dates = [d for d in dates if d > date_int]
+    return [_load_optional_daily(day) for day in future_dates[:max_horizon]]
+
+
 class Screener:
     """Main builder: collect data → classify topics → map stocks → output universe."""
 
@@ -76,6 +88,11 @@ class Screener:
         self.max_st_allow = uc.get("max_st_allow", False)
         self.hotspot_feature_overlay = uc.get("hotspot_feature_overlay", True)
         self.hotspot_feature_weight = float(uc.get("hotspot_feature_weight", 0.25))
+        self.daily_confirmation_enabled = bool(uc.get("daily_confirmation_enabled", True))
+        self.daily_confirmation_weight = float(uc.get("daily_confirmation_weight", 0.20))
+        self.daily_confirmation_lookback = int(uc.get("daily_confirmation_lookback", 20))
+        self.min_daily_confirmation_score = uc.get("min_daily_confirmation_score")
+        self.confidence_enabled = bool(uc.get("confidence_enabled", True))
 
         self.classifier = TopicClassifier(enabled=self.config.get("llm", {}).get("enabled", True))
 
@@ -94,6 +111,10 @@ class Screener:
         hf = load_hotspot_features(date_str)
         ind_signal = load_industry_signal()
         daily = _load_optional_daily(date_str)
+        daily_history = load_daily_history(
+            date_int,
+            lookback=self.daily_confirmation_lookback,
+        )
 
         return {
             "date": date_str,
@@ -122,6 +143,10 @@ class Screener:
             "daily": {
                 "rows": len(daily),
                 "columns": list(daily.columns) if not daily.empty else [],
+            },
+            "daily_history": {
+                "rows": len(daily_history),
+                "columns": list(daily_history.columns) if not daily_history.empty else [],
             },
             "industry_signal": {
                 "available": len(ind_signal) > 0,
@@ -188,6 +213,14 @@ class Screener:
         hf = load_hotspot_features(date_str)
         ind_signal = load_industry_signal()
         daily = _load_optional_daily(date_str)
+        daily_history = (
+            load_daily_history(
+                date_int,
+                lookback=self.daily_confirmation_lookback,
+            )
+            if self.daily_confirmation_enabled
+            else pd.DataFrame()
+        )
 
         # 2. Classify topics (or use pre-classified)
         ths_stocks = _df_to_dicts(ths)
@@ -221,20 +254,44 @@ class Screener:
             if self.hotspot_feature_overlay
             else raw_stocks
         )
+        confirmed_stocks = (
+            apply_daily_confirmation_overlay(
+                ranked_stocks,
+                daily_history,
+                weight=self.daily_confirmation_weight,
+                min_score=self.min_daily_confirmation_score,
+            )
+            if self.daily_confirmation_enabled
+            else ranked_stocks
+        )
 
         # 4. Apply filters
         filtered = apply_liquidity_filter(
-            ranked_stocks,
+            confirmed_stocks,
             daily_df=daily,
             min_amount_rank_pct=self.min_daily_amount_rank_pct,
             max_price=self.max_price,
             min_price=self.min_price,
             allow_st=self.max_st_allow,
         )
+        if self.confidence_enabled:
+            filtered = apply_candidate_confidence(filtered)
+        future_daily_sequence = _future_daily_sequence(date_int)
+        future_daily_frames = {
+            horizon: future_daily_sequence[horizon - 1]
+            for horizon in (1, 3, 5)
+            if len(future_daily_sequence) >= horizon
+        }
         quality_report = build_candidate_quality_report(
             filtered,
             daily,
-            _future_daily_frames(date_int),
+            future_daily_frames,
+        )
+        outcome_report = build_candidate_outcome_report(
+            filtered,
+            daily,
+            future_daily_sequence,
+            horizons=(1, 3),
         )
 
         # 5. Build output
@@ -255,6 +312,11 @@ class Screener:
                 "max_st_allow": self.max_st_allow,
                 "hotspot_feature_overlay": self.hotspot_feature_overlay,
                 "hotspot_feature_weight": self.hotspot_feature_weight,
+                "daily_confirmation_enabled": self.daily_confirmation_enabled,
+                "daily_confirmation_weight": self.daily_confirmation_weight,
+                "daily_confirmation_lookback": self.daily_confirmation_lookback,
+                "min_daily_confirmation_score": self.min_daily_confirmation_score,
+                "confidence_enabled": self.confidence_enabled,
             },
             "data_sources": {
                 "ths_hot_available": len(ths) > 0,
@@ -263,9 +325,11 @@ class Screener:
                 "kpl_concept_cons_available": len(kpl_cons) > 0,
                 "hotspot_features_available": len(hf) > 0,
                 "daily_available": len(daily) > 0,
+                "daily_history_available": len(daily_history) > 0,
                 "industry_signal_available": len(ind_signal) > 0,
             },
             "quality_report": quality_report,
+            "outcome_report": outcome_report,
         }
 
         # 6. Write output
@@ -286,6 +350,10 @@ class Screener:
         quality_path = out_dir / "candidate_quality.json"
         with open(quality_path, "w", encoding="utf-8") as f:
             json.dump(quality_report, f, ensure_ascii=False, indent=2, default=str)
+
+        outcomes_path = out_dir / "candidate_outcomes.json"
+        with open(outcomes_path, "w", encoding="utf-8") as f:
+            json.dump(outcome_report, f, ensure_ascii=False, indent=2, default=str)
 
         # Run config
         config_path = out_dir / "run_config.json"
@@ -324,6 +392,7 @@ class Screener:
                 "json": str(json_path),
                 "csv": str(csv_path) if filtered else None,
                 "quality": str(quality_path),
+                "outcomes": str(outcomes_path),
                 "signals": signal_files or None,
             },
         }

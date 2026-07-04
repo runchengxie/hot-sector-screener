@@ -81,6 +81,16 @@ def build_signal_frame(
                 "close": item.get("close"),
                 "hotspot_feature_score": item.get("hotspot_feature_score"),
                 "hotspot_score_multiplier": item.get("hotspot_score_multiplier"),
+                "daily_confirm_score": item.get("daily_confirm_score"),
+                "trend_score": item.get("trend_score"),
+                "volume_score": item.get("volume_score"),
+                "risk_score": item.get("risk_score"),
+                "ret_5d": item.get("ret_5d"),
+                "ret_10d": item.get("ret_10d"),
+                "close_to_20d_high": item.get("close_to_20d_high"),
+                "amount_ratio_20d": item.get("amount_ratio_20d"),
+                "confidence_score": item.get("confidence_score"),
+                "confidence_label": item.get("confidence_label"),
             }
         )
 

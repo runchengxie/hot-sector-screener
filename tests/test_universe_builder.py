@@ -97,6 +97,10 @@ class TestScreenerBuildUniverse:
             patch("hot_sector_screener.universe_builder.load_kpl_concept_cons") as mock_kpl,
             patch("hot_sector_screener.universe_builder.load_hotspot_features") as mock_hf,
             patch("hot_sector_screener.universe_builder.load_industry_signal") as mock_ind,
+            patch(
+                "hot_sector_screener.universe_builder.load_daily_history",
+                return_value=pd.DataFrame(),
+            ),
             patch("hot_sector_screener.universe_builder.write_signal_artifacts") as mock_signals,
         ):
             mock_ths.return_value = pd.DataFrame()
@@ -143,6 +147,10 @@ class TestScreenerBuildUniverse:
             ),
             patch(
                 "hot_sector_screener.universe_builder.load_industry_signal",
+                return_value=pd.DataFrame(),
+            ),
+            patch(
+                "hot_sector_screener.universe_builder.load_daily_history",
                 return_value=pd.DataFrame(),
             ),
             patch(
@@ -216,7 +224,9 @@ class TestScreenerBuildUniverse:
             assert (tmp_path / "run_config.json").exists()
             assert (tmp_path / "lineage.json").exists()
             assert (tmp_path / "candidate_quality.json").exists()
+            assert (tmp_path / "candidate_outcomes.json").exists()
             assert "quality_report" in result
+            assert "outcome_report" in result
             assert result["output_dir"] == str(tmp_path)
 
 
@@ -244,6 +254,10 @@ class TestScreenerScan:
                 "hot_sector_screener.universe_builder.load_industry_signal",
                 return_value=pd.DataFrame(),
             ),
+            patch(
+                "hot_sector_screener.universe_builder.load_daily_history",
+                return_value=pd.DataFrame(),
+            ),
         ):
             screener = Screener()
             result = screener.scan(trade_date="2026-06-19")
@@ -254,6 +268,7 @@ class TestScreenerScan:
             assert "dc_concept_cons" in result
             assert "kpl_concept_cons" in result
             assert "hotspot_features" in result
+            assert "daily_history" in result
             assert "industry_signal" in result
             assert result["ths_hot"]["rows"] == 0
 

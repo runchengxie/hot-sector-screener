@@ -28,6 +28,9 @@ def _sample_result():
                 "source_topics": ["半导体"],
                 "source_concepts": ["半导体设备"],
                 "hotspot_feature_score": 0.8,
+                "daily_confirm_score": 0.75,
+                "confidence_score": 0.82,
+                "confidence_label": "high",
             },
             {
                 "ts_code": "000001.SZ",
@@ -51,6 +54,8 @@ def test_build_signal_frame_uses_canonical_columns_and_rank():
     assert frame["rank"].tolist() == [1, 2]
     assert frame["model_version"].unique().tolist() == ["test-model"]
     assert pd.api.types.is_bool_dtype(frame["eligible_for_backtest"])
+    assert frame.loc[0, "daily_confirm_score"] == 0.75
+    assert frame.loc[0, "confidence_label"] == "high"
 
 
 def test_write_signal_artifacts_writes_parquet_csv_and_metadata(tmp_path):

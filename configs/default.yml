@@ -25,6 +25,11 @@ universe:
   stocks_per_topic: 25
   hotspot_feature_overlay: true
   hotspot_feature_weight: 0.25
+  daily_confirmation_enabled: true
+  daily_confirmation_weight: 0.20
+  daily_confirmation_lookback: 20
+  min_daily_confirmation_score:
+  confidence_enabled: true
 
 output:
   format: csv
