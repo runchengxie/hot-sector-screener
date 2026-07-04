@@ -75,7 +75,15 @@ scripts/hotsector_research_handoff.sh
 ```
 
 脚本会把 `HOTSECTOR_SIGNAL_FILE` 指向本次 `signals.parquet`，供
-`strategy-pipeline` 的配置或桥接命令读取。
+`strategy-pipeline` 的 `hotsector_overlay` preset 读取。需要继续导出执行目标时：
+
+```bash
+RUN_RESEARCH=1 \
+EXPORT_TARGETS=1 \
+TARGETS_OUT=outputs/20260629/targets.json \
+TRADE_DATE=20260629 \
+scripts/hotsector_research_handoff.sh
+```
 
 ## systemd 示例
 
@@ -84,8 +92,7 @@ scripts/hotsector_research_handoff.sh
 - `scripts/systemd/hotsector-research-handoff.service`
 - `scripts/systemd/hotsector-research-handoff.timer`
 
-默认 `RUN_RESEARCH=0`，也就是只生成信号，不自动跑研究或导出执行目标。正式启用研究链路前，
-应先在 `strategy-pipeline` 增加并验证 `hotsector_overlay` 配置。
+默认 `RUN_RESEARCH=0`，也就是只生成信号，不自动跑研究或导出执行目标。
 
 ## 策略口径
 
