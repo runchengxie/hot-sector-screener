@@ -11,6 +11,7 @@ from .backtest.stock_backtest import run_stock_backtest
 from .config import default_config, load_config
 from .data_sources.platform import summarize_data_coverage
 from .paths import OUTPUTS_DIR
+from .signal_export import load_candidate_result, write_signal_artifacts
 from .universe_builder import Screener
 
 
@@ -56,6 +57,18 @@ def build_parser() -> argparse.ArgumentParser:
     bp.add_argument("--out-prompt", default="hotspot_prompt.txt", help="Output prompt file path")
     bp.add_argument("--stock-limit", type=int, default=30, help="Max hot stocks in prompt")
     bp.add_argument("--concept-limit", type=int, default=20, help="Max concepts in prompt")
+
+    # export-signals — convert candidate universe into cstree signal artifact
+    es = sub.add_parser(
+        "export-signals",
+        help="Export candidate universe as cstree-compatible signals.parquet",
+    )
+    es.add_argument("--date", default=None, help="Output date to export")
+    es.add_argument("--input", default=None, help="candidate_universe.json path")
+    es.add_argument("--output-dir", default=None, help="Signal output directory")
+    es.add_argument("--model-version", default="hotsector-theme-v2")
+    es.add_argument("--feature-set-id", default="topic-concept-hotspot-overlay")
+    es.add_argument("--no-live", action="store_true", help="Mark signals ineligible for live use")
 
     # backtest — hotspot-driven strategy backtests
     bt = sub.add_parser("backtest", help="Run hotspot-driven strategy backtests")
@@ -291,6 +304,44 @@ def cmd_build_prompt(args: argparse.Namespace) -> None:
     print(f"    hotsector run --date {result['date_int']} --load-topics topics.json")
 
 
+def _resolve_output_dir(date_arg: str | None) -> Path | None:
+    date_int = _resolve_date(date_arg)
+    if date_int:
+        return OUTPUTS_DIR / date_int
+    candidates = sorted(OUTPUTS_DIR.iterdir()) if OUTPUTS_DIR.is_dir() else []
+    return candidates[-1] if candidates else None
+
+
+def cmd_export_signals(args: argparse.Namespace) -> None:
+    """Export a saved candidate universe as canonical research signals."""
+    if args.input:
+        input_path = Path(args.input)
+        default_out_dir = input_path.parent
+    else:
+        default_out_dir = _resolve_output_dir(args.date)
+        if default_out_dir is None:
+            print("No universe output found. Run `hotsector run` first.")
+            return
+        input_path = default_out_dir / "candidate_universe.json"
+
+    if not input_path.exists():
+        print(f"candidate_universe.json not found: {input_path}")
+        return
+
+    out_dir = Path(args.output_dir) if args.output_dir else default_out_dir
+    result = load_candidate_result(input_path)
+    files = write_signal_artifacts(
+        result,
+        out_dir,
+        model_version=args.model_version,
+        feature_set_id=args.feature_set_id,
+        eligible_for_live=not bool(args.no_live),
+    )
+    print("\n  Signal artifacts:")
+    for label, path in files.items():
+        print(f"    {label}: {path}")
+
+
 def _resolve_config(config_arg: str | None) -> dict:
     if config_arg:
         return load_config(config_arg)
@@ -367,6 +418,7 @@ def main() -> None:
         "run": cmd_run,
         "universe": cmd_universe,
         "build-prompt": cmd_build_prompt,
+        "export-signals": cmd_export_signals,
     }
 
     # backtest has sub-subcommands

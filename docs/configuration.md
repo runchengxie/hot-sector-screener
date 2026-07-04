@@ -27,10 +27,16 @@ universe:
   max_st_allow: false
   topics_per_run: 5
   stocks_per_topic: 25
+  hotspot_feature_overlay: true
+  hotspot_feature_weight: 0.25
 
 output:
   format: csv
   publish: false
+  export_signals: true
+  signal_model_version: hotsector-theme-v2
+  signal_feature_set_id: topic-concept-hotspot-overlay
+  eligible_for_live: true
 
 # rotation_signal_dir: /path/to/rotation-v3/latest
 ```
@@ -75,6 +81,8 @@ output:
 | `max_st_allow` | false | 是否允许 ST 股票 |
 | `topics_per_run` | 5 | LLM 输出的主题数量 |
 | `stocks_per_topic` | 25 | 每个主题最多选取的股票数 |
+| `hotspot_feature_overlay` | true | 是否用 `hotspot_features` 对候选池排序做有界叠加 |
+| `hotspot_feature_weight` | 0.25 | 派生热点特征叠加强度，0 表示关闭 |
 
 ### output
 
@@ -82,3 +90,7 @@ output:
 |------|--------|------|
 | `format` | `csv` | 输出格式，当前仅支持 csv |
 | `publish` | false | 是否发布到外部系统（预留，当前无效） |
+| `export_signals` | true | 是否输出 research-workspace 标准信号产物 |
+| `signal_model_version` | `hotsector-theme-v2` | 写入信号产物的 `model_version` |
+| `signal_feature_set_id` | `topic-concept-hotspot-overlay` | 写入信号产物的 `feature_set_id` |
+| `eligible_for_live` | true | 信号是否标记为可进入 live 候选 |

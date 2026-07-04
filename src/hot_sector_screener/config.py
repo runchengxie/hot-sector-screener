@@ -42,10 +42,24 @@ def load_config(config_path: str | Path) -> dict[str, Any]:
             "max_st_allow": payload.get("universe", {}).get("max_st_allow", False),
             "topics_per_run": payload.get("universe", {}).get("topics_per_run", 5),
             "stocks_per_topic": payload.get("universe", {}).get("stocks_per_topic", 25),
+            "hotspot_feature_overlay": payload.get("universe", {}).get(
+                "hotspot_feature_overlay", True
+            ),
+            "hotspot_feature_weight": payload.get("universe", {}).get(
+                "hotspot_feature_weight", 0.25
+            ),
         },
         "output": {
             "format": payload.get("output", {}).get("format", "csv"),
             "publish": payload.get("output", {}).get("publish", False),
+            "export_signals": payload.get("output", {}).get("export_signals", True),
+            "signal_model_version": payload.get("output", {}).get(
+                "signal_model_version", "hotsector-theme-v2"
+            ),
+            "signal_feature_set_id": payload.get("output", {}).get(
+                "signal_feature_set_id", "topic-concept-hotspot-overlay"
+            ),
+            "eligible_for_live": payload.get("output", {}).get("eligible_for_live", True),
         },
         "rotation_signal_dir": payload.get("rotation_signal_dir"),
     }
@@ -72,10 +86,16 @@ def default_config() -> dict[str, Any]:
             "max_st_allow": False,
             "topics_per_run": 5,
             "stocks_per_topic": 25,
+            "hotspot_feature_overlay": True,
+            "hotspot_feature_weight": 0.25,
         },
         "output": {
             "format": "csv",
             "publish": False,
+            "export_signals": True,
+            "signal_model_version": "hotsector-theme-v2",
+            "signal_feature_set_id": "topic-concept-hotspot-overlay",
+            "eligible_for_live": True,
         },
         "rotation_signal_dir": None,
     }

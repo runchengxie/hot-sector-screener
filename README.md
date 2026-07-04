@@ -42,6 +42,9 @@ uv run hotsector universe --date 2026-06-19
 
 - `candidate_universe.csv` — 候选股票表格，可用 Excel 打开
 - `candidate_universe.json` — 完整结果（含主题空间、数据源状态等）
+- `candidate_quality.json` — T+1/T+3/T+5 候选池表现回看（后续行情可用时）
+- `signals.parquet` / `signals.csv` — research-workspace 可消费的标准信号产物
+- `signals.meta.json` — 信号契约和来源元数据
 - `lineage.json` — 数据溯源记录
 - `run_config.json` — 本次运行的配置快照
 
@@ -72,3 +75,4 @@ hot-sector-screener/
 - [配置项参考](docs/configuration.md) — 配置文件各字段含义
 - [输出格式说明](docs/output-contract.md) — 输出文件的 JSON 结构和字段
 - [回测脚本](docs/backtests.md) — 两个独立的回测脚本说明
+- [Research Workspace 交接](docs/research-workspace-handoff.md) — 标准信号产物和跨项目调度

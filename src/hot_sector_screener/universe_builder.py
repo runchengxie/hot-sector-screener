@@ -19,6 +19,8 @@ from .data_sources.platform import (
 from .data_sources.rotation_signal import load_industry_signal
 from .paths import ensure_output_dir
 from .quality_report import build_candidate_quality_report
+from .ranking import apply_hotspot_feature_overlay
+from .signal_export import write_signal_artifacts
 from .stock_mapper import StockMapper, apply_liquidity_filter
 from .topic_classifier import TopicClassifier, build_topic_prompt
 
@@ -72,6 +74,8 @@ class Screener:
         self.max_price = uc.get("max_price", 200.0)
         self.min_price = uc.get("min_price", 2.0)
         self.max_st_allow = uc.get("max_st_allow", False)
+        self.hotspot_feature_overlay = uc.get("hotspot_feature_overlay", True)
+        self.hotspot_feature_weight = float(uc.get("hotspot_feature_weight", 0.25))
 
         self.classifier = TopicClassifier(enabled=self.config.get("llm", {}).get("enabled", True))
 
@@ -181,6 +185,7 @@ class Screener:
         dc = load_dc_concept(date_str)
         dc_cons = load_dc_concept_cons(date_str)
         kpl_cons = load_kpl_concept_cons(date_str)
+        hf = load_hotspot_features(date_str)
         ind_signal = load_industry_signal()
         daily = _load_optional_daily(date_str)
 
@@ -207,10 +212,19 @@ class Screener:
             max_stocks_per_topic=self.stocks_per_topic,
             max_total=self.max_candidates,
         )
+        ranked_stocks = (
+            apply_hotspot_feature_overlay(
+                raw_stocks,
+                hf,
+                weight=self.hotspot_feature_weight,
+            )
+            if self.hotspot_feature_overlay
+            else raw_stocks
+        )
 
         # 4. Apply filters
         filtered = apply_liquidity_filter(
-            raw_stocks,
+            ranked_stocks,
             daily_df=daily,
             min_amount_rank_pct=self.min_daily_amount_rank_pct,
             max_price=self.max_price,
@@ -239,12 +253,15 @@ class Screener:
                 "max_price": self.max_price,
                 "min_price": self.min_price,
                 "max_st_allow": self.max_st_allow,
+                "hotspot_feature_overlay": self.hotspot_feature_overlay,
+                "hotspot_feature_weight": self.hotspot_feature_weight,
             },
             "data_sources": {
                 "ths_hot_available": len(ths) > 0,
                 "dc_concept_available": len(dc) > 0,
                 "dc_concept_cons_available": len(dc_cons) > 0,
                 "kpl_concept_cons_available": len(kpl_cons) > 0,
+                "hotspot_features_available": len(hf) > 0,
                 "daily_available": len(daily) > 0,
                 "industry_signal_available": len(ind_signal) > 0,
             },
@@ -281,6 +298,20 @@ class Screener:
                 default=str,
             )
 
+        result["output_dir"] = str(out_dir)
+        signal_files: dict[str, str] = {}
+        output_cfg = self.config.get("output", {})
+        if output_cfg.get("export_signals", True):
+            signal_files = write_signal_artifacts(
+                result,
+                out_dir,
+                model_version=str(output_cfg.get("signal_model_version", "hotsector-theme-v2")),
+                feature_set_id=str(
+                    output_cfg.get("signal_feature_set_id", "topic-concept-hotspot-overlay")
+                ),
+                eligible_for_live=bool(output_cfg.get("eligible_for_live", True)),
+            )
+
         # Lineage
         lineage = {
             "date": date_str,
@@ -293,11 +324,13 @@ class Screener:
                 "json": str(json_path),
                 "csv": str(csv_path) if filtered else None,
                 "quality": str(quality_path),
+                "signals": signal_files or None,
             },
         }
         lineage_path = out_dir / "lineage.json"
         with open(lineage_path, "w", encoding="utf-8") as f:
             json.dump(lineage, f, ensure_ascii=False, indent=2)
 
-        result["output_dir"] = str(out_dir)
+        if signal_files:
+            result["signal_artifacts"] = signal_files
         return result

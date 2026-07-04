@@ -35,6 +35,9 @@ class TestDefaultConfig:
         assert uni["max_st_allow"] is False
         assert uni["topics_per_run"] == 5
         assert uni["stocks_per_topic"] == 25
+        assert uni["hotspot_feature_overlay"] is True
+        assert uni["hotspot_feature_weight"] == 0.25
+        assert cfg["output"]["export_signals"] is True
 
 
 class TestLoadConfig:
@@ -56,6 +59,8 @@ universe:
         # defaults preserved for unspecified keys
         assert cfg["universe"]["min_candidates"] == 30
         assert cfg["universe"]["min_price"] == 2.0
+        assert cfg["universe"]["hotspot_feature_overlay"] is True
+        assert cfg["output"]["export_signals"] is True
 
     def test_load_empty_yaml(self, tmp_path):
         config_path = tmp_path / "empty.yml"

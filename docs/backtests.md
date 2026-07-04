@@ -1,10 +1,10 @@
 # 回测脚本
 
-`scripts/` 目录下包含两个独立的回测脚本，用于验证热点数据的选股/选基效果。它们不通过 `hotsector` CLI 调用，需要直接用 Python 运行。
+回测已接入 `hotsector backtest` CLI，用于验证热点数据的选股/选基效果。
 
 ## 热点追踪策略回测
 
-**文件：** `scripts/hotspot_backtest.py`
+**入口：** `uv run hotsector backtest stock`
 
 ### 方法论
 
@@ -27,9 +27,8 @@
 ### 运行
 
 ```bash
-cd ~/code/hot-sector-screener
 DATA_PLATFORM_ROOT=/home/yourname/data/market-data-platform \
-  uv run python scripts/hotspot_backtest.py
+  uv run hotsector backtest stock
 ```
 
 ### 参数
@@ -56,7 +55,7 @@ DATA_PLATFORM_ROOT=/home/yourname/data/market-data-platform \
 
 ## Hotspot→ETF 轮动回测
 
-**文件：** `scripts/hotspot_etf_backtest.py`
+**入口：** `uv run hotsector backtest etf`
 
 ### 方法论
 
@@ -77,10 +76,9 @@ DATA_PLATFORM_ROOT=/home/yourname/data/market-data-platform \
 ### 运行
 
 ```bash
-cd ~/code/hot-sector-screener
 DATA_PLATFORM_ROOT=/home/yourname/data/market-data-platform \
-  ETF_ROTATION_ROOT=/home/yourname/code/guan-etf-rotation-v3 \
-  uv run python scripts/hotspot_etf_backtest.py
+  ETF_ROTATION_ROOT=/home/yourname/code/market-intel/guan-etf-rotation-v3 \
+  uv run hotsector backtest etf
 ```
 
 需要额外设置 `ETF_ROTATION_ROOT` 指向 rotation-v3 项目目录，因为脚本依赖该项目的 ETF 日线数据。
@@ -118,3 +116,15 @@ DATA_PLATFORM_ROOT=/home/yourname/data/market-data-platform \
 
 - 概念到 ETF 曝光维度的映射是硬编码的，当热点概念超出预定义的曝光维度时，映射会失效
 - ETF 候选池只有 29 只，覆盖有限。选来选去容易集中在半导体/科技方向
+
+## ML 增强 ETF 回测
+
+**入口：** `uv run hotsector backtest etf-ml`
+
+在热点概念 → ETF 曝光的基础上，加入 ETF 技术特征和 walk-forward 训练。
+
+```bash
+DATA_PLATFORM_ROOT=/home/yourname/data/market-data-platform \
+  ETF_ROTATION_ROOT=/home/yourname/code/market-intel/guan-etf-rotation-v3 \
+  uv run hotsector backtest etf-ml
+```

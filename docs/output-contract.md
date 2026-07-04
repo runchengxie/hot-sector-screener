@@ -2,6 +2,15 @@
 
 每次执行 `hotsector run` 后，候选池输出到 `outputs/<YYYYMMDD>/` 目录下，包含以下文件：
 
+- `candidate_universe.json`
+- `candidate_universe.csv`
+- `candidate_quality.json`
+- `signals.parquet`
+- `signals.csv`
+- `signals.meta.json`
+- `lineage.json`
+- `run_config.json`
+
 ## candidate_universe.json
 
 完整输出结果，包含主题空间、候选股票列表以及运行元信息。
@@ -26,6 +35,8 @@
       "name": "中际旭创",
       "relevance": 0.95,
       "score": 1.42,
+      "hotspot_feature_score": 0.88,
+      "hotspot_score_multiplier": 1.08,
       "liquidity_score": 0.93,
       "amount_rank_pct": 93.2,
       "close": 120.5,
@@ -85,6 +96,8 @@
 | `name` | string | 股票名称 |
 | `relevance` | float | 与主题的相关性得分，0-1 之间 |
 | `score` | float | 主题权重、概念强度、成分热度等聚合后的原始分 |
+| `hotspot_feature_score` | float | 派生热点特征得分，0-1；有对应特征时输出 |
+| `hotspot_score_multiplier` | float | 派生热点特征叠加到原始分上的有界乘数 |
 | `liquidity_score` | float | 流动性分，来自成交额分位，0-1 之间 |
 | `amount_rank_pct` | float | 当日成交额在全市场中的百分位 |
 | `close` | float | 当日收盘价，用于价格过滤 |
@@ -98,6 +111,31 @@
 ## candidate_quality.json
 
 候选池质量回看。若数据湖中已有后续交易日的日线数据，会输出 T+1/T+3/T+5 的平均收益、中位数收益、胜率和样本数；否则 `available=false` 并给出 `reason`。
+
+## signals.parquet / signals.csv
+
+research-workspace 可消费的标准信号产物。核心字段兼容 `cstree.signals`：
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `signal_date` | string | `YYYYMMDD` |
+| `symbol` | string | 股票代码 |
+| `raw_pred` | float | 候选池原始分 |
+| `signal_eval` | float | 评估分 |
+| `signal_backtest` | float | 回测分 |
+| `signal_direction` | float | 多头方向，固定为 1 |
+| `rank` | int | 当日排名 |
+| `model_version` | string | 信号模型版本 |
+| `feature_set_id` | string | 特征/信号口径 |
+| `eligible_for_backtest` | bool | 是否可用于回测 |
+| `eligible_for_live` | bool | 是否可用于 live 候选 |
+
+会保留部分候选池辅助字段，例如 `name`、`source_topics`、`source_concepts`、
+`liquidity_score`、`amount_rank_pct`、`hotspot_feature_score`。
+
+## signals.meta.json
+
+记录信号契约、schema 版本、行数、来源候选池、数据源可用性和运行配置快照。
 
 ## lineage.json
 
@@ -117,7 +155,12 @@
   "output_files": {
     "json": "outputs/20260619/candidate_universe.json",
     "csv": "outputs/20260619/candidate_universe.csv",
-    "quality": "outputs/20260619/candidate_quality.json"
+    "quality": "outputs/20260619/candidate_quality.json",
+    "signals": {
+      "parquet": "outputs/20260619/signals.parquet",
+      "csv": "outputs/20260619/signals.csv",
+      "metadata": "outputs/20260619/signals.meta.json"
+    }
   }
 }
 ```

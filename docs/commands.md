@@ -1,6 +1,6 @@
 # 命令详解
 
-命令行入口统一为 `hotsector`，当前支持 5 个子命令。
+命令行入口统一为 `hotsector`，当前支持 7 组子命令。
 
 ## 全局说明
 
@@ -84,6 +84,29 @@ uv run hotsector universe --date 2026-06-19 --limit 50  # 显示 50 只
 
 输出内容包括候选股票列表（代码、名称、相关性得分、来源主题）以及当天的主题空间。
 
+## export-signals — 导出标准信号
+
+把 `candidate_universe.json` 转成 research-workspace 可消费的 `signals.parquet`、
+`signals.csv` 和 `signals.meta.json`。`hotsector run` 默认已经自动导出；这个命令用于
+从历史候选池重新生成信号产物。
+
+```bash
+uv run hotsector export-signals --date 2026-06-19
+uv run hotsector export-signals --input outputs/20260619/candidate_universe.json
+uv run hotsector export-signals --date 2026-06-19 --no-live
+```
+
+常用参数：
+
+| 参数 | 说明 |
+|------|------|
+| `--date` | 指定 `outputs/<YYYYMMDD>/candidate_universe.json` |
+| `--input` | 直接指定候选池 JSON |
+| `--output-dir` | 自定义信号输出目录 |
+| `--model-version` | 写入 `model_version` 字段 |
+| `--feature-set-id` | 写入 `feature_set_id` 字段 |
+| `--no-live` | 将 `eligible_for_live` 置为 false |
+
 ## build-prompt — 生成 LLM 提示词
 
 收集热点数据并写出 LLM 提示词到文件，不执行分类。
@@ -95,3 +118,16 @@ uv run hotsector build-prompt --date 2026-06-19 --stock-limit 50 --concept-limit
 ```
 
 输出的提示词文件可以直接发给外部 LLM 处理，得到主题 JSON 后再通过 `hotsector run --load-topics topics.json` 回接。
+
+## backtest — 热点策略回测
+
+当前回测已经接入 CLI：
+
+```bash
+uv run hotsector backtest stock
+uv run hotsector backtest etf
+uv run hotsector backtest etf-ml
+```
+
+`stock` 用热点概念映射个股并做 1 日持有回测；`etf` 用热点概念映射 ETF 曝光；
+`etf-ml` 在 ETF 曝光基础上加入技术特征和 walk-forward 训练。

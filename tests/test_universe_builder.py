@@ -97,6 +97,7 @@ class TestScreenerBuildUniverse:
             patch("hot_sector_screener.universe_builder.load_kpl_concept_cons") as mock_kpl,
             patch("hot_sector_screener.universe_builder.load_hotspot_features") as mock_hf,
             patch("hot_sector_screener.universe_builder.load_industry_signal") as mock_ind,
+            patch("hot_sector_screener.universe_builder.write_signal_artifacts") as mock_signals,
         ):
             mock_ths.return_value = pd.DataFrame()
             mock_dc.return_value = pd.DataFrame()
@@ -104,6 +105,7 @@ class TestScreenerBuildUniverse:
             mock_kpl.return_value = pd.DataFrame()
             mock_hf.return_value = pd.DataFrame()
             mock_ind.return_value = pd.DataFrame()
+            mock_signals.return_value = {"parquet": "signals.parquet"}
 
             screener = Screener()
             result = screener.build_universe(
@@ -118,6 +120,7 @@ class TestScreenerBuildUniverse:
             assert "config_snapshot" in result
             assert "data_sources" in result
             assert result["data_sources"]["dc_concept_cons_available"] is True
+            assert result["data_sources"]["hotspot_features_available"] is False
 
     def test_empty_data_returns_empty_universe(self):
         """When all data sources return empty, universe should still produce a valid result."""
@@ -141,6 +144,10 @@ class TestScreenerBuildUniverse:
             patch(
                 "hot_sector_screener.universe_builder.load_industry_signal",
                 return_value=pd.DataFrame(),
+            ),
+            patch(
+                "hot_sector_screener.universe_builder.write_signal_artifacts",
+                return_value={},
             ),
         ):
             screener = Screener({"llm": {"enabled": False}})
@@ -172,6 +179,10 @@ class TestScreenerBuildUniverse:
             patch(
                 "hot_sector_screener.universe_builder.load_industry_signal",
                 return_value=pd.DataFrame(),
+            ),
+            patch(
+                "hot_sector_screener.universe_builder.write_signal_artifacts",
+                return_value={"parquet": "signals.parquet"},
             ),
             patch(
                 "hot_sector_screener.universe_builder.load_daily_data",

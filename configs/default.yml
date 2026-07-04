@@ -23,10 +23,16 @@ universe:
   max_st_allow: false
   topics_per_run: 5
   stocks_per_topic: 25
+  hotspot_feature_overlay: true
+  hotspot_feature_weight: 0.25
 
 output:
   format: csv
   publish: false
+  export_signals: true
+  signal_model_version: hotsector-theme-v2
+  signal_feature_set_id: topic-concept-hotspot-overlay
+  eligible_for_live: true
 
 # Optional: path to rotation-v3 industry-signal output
 # rotation_signal_dir: /home/richard/data/market-data-platform/strategy_outputs/etf_rotation_v3/latest

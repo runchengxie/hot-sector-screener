@@ -21,6 +21,7 @@ LLM 分析当日热点 → 输出主题空间:
 
 确定性规则映射主题 → 候选股票:
   topic → 关联概念板块 → 概念成分股
+  + 派生热点特征有界叠加
   + 价格 / 流动性过滤
 
     ↓
@@ -29,6 +30,8 @@ LLM 分析当日热点 → 输出主题空间:
   outputs/<YYYYMMDD>/
   ├── candidate_universe.csv
   ├── candidate_universe.json
+  ├── signals.parquet
+  ├── signals.meta.json
   ├── lineage.json
   └── run_config.json
 ```
@@ -38,6 +41,7 @@ LLM 分析当日热点 → 输出主题空间:
 - **LLM 只做信息压缩和主题归类，不做选股。** 主题到具体股票的映射是确定性规则，不依赖模型判断。即使 LLM 调用失败或结果不可用，系统也有基于概念名称频率的兜底提取逻辑。
 - **数据湖的单向读取。** 从 `DATA_PLATFORM_ROOT` 读数据，不写回数据湖。
 - **所有输出都在本地。** 运行结果写在本仓库的 `outputs/` 目录下，不影响其他系统。
+- **研究交接走文件契约。** `signals.parquet` 是给 research-workspace 的交接层，不从本项目直接 import 研究或回测模块。
 
 ## 数据源
 
