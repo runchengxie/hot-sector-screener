@@ -188,6 +188,21 @@ def list_available_dates(source: str = "ths_hot") -> list[str]:
     return sorted(dates)
 
 
+def latest_common_date(sources: list[str] | tuple[str, ...]) -> str | None:
+    """Return the latest trade date available across all requested sources."""
+    common_dates: set[str] | None = None
+    for source in sources:
+        dates = set(list_available_dates(source))
+        if not dates:
+            return None
+        common_dates = dates if common_dates is None else common_dates & dates
+        if not common_dates:
+            return None
+    if not common_dates:
+        return None
+    return sorted(common_dates)[-1]
+
+
 def summarize_data_coverage() -> dict[str, Any]:
     """Summarise what hotspot data is available in the data lake."""
     sources = [

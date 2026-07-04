@@ -36,6 +36,9 @@ uv run hotsector run --date 2026-06-19
 uv run hotsector universe --date 2026-06-19
 ```
 
+本机日更入口为顶层 `scripts/hotsector_research_handoff.sh`。默认只生成候选池和
+`signals.parquet`，不运行 research-workspace，也不导出执行目标；质量门失败时返回非 0。
+
 ## 输出文件
 
 每次运行结果写到 `outputs/<YYYYMMDD>/`：

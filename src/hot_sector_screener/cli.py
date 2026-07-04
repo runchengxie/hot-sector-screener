@@ -9,8 +9,13 @@ from .backtest.etf_backtest import run_etf_backtest
 from .backtest.etf_ml_backtest import run_etf_ml_backtest
 from .backtest.stock_backtest import run_stock_backtest
 from .config import default_config, load_config
-from .data_sources.platform import summarize_data_coverage
+from .data_sources.platform import latest_common_date, summarize_data_coverage
 from .paths import OUTPUTS_DIR
+from .production_quality import (
+    DEFAULT_REQUIRED_SOURCES,
+    parse_source_list,
+    validate_candidate_output,
+)
 from .signal_export import load_candidate_result, write_signal_artifacts
 from .universe_builder import Screener
 
@@ -22,6 +27,15 @@ def build_parser() -> argparse.ArgumentParser:
     # info — show data coverage
     info = sub.add_parser("info", help="Show available hotspot data in data lake")
     info.add_argument("--source", default=None, help="Filter by source name")
+
+    # latest-date — resolve the most recent date where required sources overlap
+    latest = sub.add_parser("latest-date", help="Print latest common trade date")
+    latest.add_argument(
+        "--sources",
+        default=None,
+        help=("Comma-separated source list. Default: " + ",".join(DEFAULT_REQUIRED_SOURCES)),
+    )
+    latest.add_argument("--json", action="store_true", help="Print JSON payload")
 
     # scan — collect data without LLM
     scan = sub.add_parser("scan", help="Collect hotspot data (no LLM call)")
@@ -69,6 +83,30 @@ def build_parser() -> argparse.ArgumentParser:
     es.add_argument("--model-version", default="hotsector-theme-v2")
     es.add_argument("--feature-set-id", default="topic-concept-hotspot-overlay")
     es.add_argument("--no-live", action="store_true", help="Mark signals ineligible for live use")
+
+    # validate-output — production gate for scheduled handoff jobs
+    vo = sub.add_parser(
+        "validate-output",
+        help="Validate one output directory for scheduled candidate-signal production",
+    )
+    vo.add_argument("--date", default=None, help="Output date to validate")
+    vo.add_argument("--output-dir", default=None, help="Output directory to validate")
+    vo.add_argument(
+        "--require-sources",
+        default=None,
+        help=("Comma-separated required sources. Default: " + ",".join(DEFAULT_REQUIRED_SOURCES)),
+    )
+    vo.add_argument(
+        "--min-candidates",
+        type=int,
+        default=None,
+        help="Override min candidate count; default reads config_snapshot.min_candidates",
+    )
+    vo.add_argument(
+        "--no-require-signals",
+        action="store_true",
+        help="Do not require non-empty signals.parquet/signals.meta.json",
+    )
 
     # backtest — hotspot-driven strategy backtests
     bt = sub.add_parser("backtest", help="Run hotspot-driven strategy backtests")
@@ -134,6 +172,22 @@ def cmd_info(args: argparse.Namespace) -> None:
         print(f"    最晚:       {info['latest']}")
         if info["sample_dates"]:
             print(f"    样本日期:   {', '.join(str(d) for d in info['sample_dates'])}")
+
+
+def cmd_latest_date(args: argparse.Namespace) -> None:
+    """Print latest common date across required sources."""
+    sources = parse_source_list(args.sources)
+    latest = latest_common_date(sources)
+    if latest is None:
+        print(
+            "No common trade date for sources: " + ",".join(sources),
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    if args.json:
+        print(json.dumps({"date": latest, "sources": list(sources)}, ensure_ascii=False))
+    else:
+        print(latest)
 
 
 def cmd_scan(args: argparse.Namespace) -> None:
@@ -342,6 +396,30 @@ def cmd_export_signals(args: argparse.Namespace) -> None:
         print(f"    {label}: {path}")
 
 
+def cmd_validate_output(args: argparse.Namespace) -> None:
+    """Validate a saved candidate universe and its canonical signal artifacts."""
+    if args.output_dir:
+        out_dir = Path(args.output_dir)
+    else:
+        out_dir = _resolve_output_dir(args.date)
+        if out_dir is None:
+            print("No universe output found. Run `hotsector run` first.", file=sys.stderr)
+            sys.exit(1)
+
+    issues = validate_candidate_output(
+        out_dir,
+        required_sources=parse_source_list(args.require_sources),
+        min_candidates=args.min_candidates,
+        require_signals=not bool(args.no_require_signals),
+    )
+    if issues:
+        print(f"  Output quality gate failed: {out_dir}", file=sys.stderr)
+        for issue in issues:
+            print(f"  - {issue}", file=sys.stderr)
+        sys.exit(1)
+    print(f"  Output quality gate passed: {out_dir}")
+
+
 def _resolve_config(config_arg: str | None) -> dict:
     if config_arg:
         return load_config(config_arg)
@@ -414,11 +492,13 @@ def main() -> None:
 
     commands = {
         "info": cmd_info,
+        "latest-date": cmd_latest_date,
         "scan": cmd_scan,
         "run": cmd_run,
         "universe": cmd_universe,
         "build-prompt": cmd_build_prompt,
         "export-signals": cmd_export_signals,
+        "validate-output": cmd_validate_output,
     }
 
     # backtest has sub-subcommands

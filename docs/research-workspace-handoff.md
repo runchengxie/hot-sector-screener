@@ -65,7 +65,25 @@ cd ~/code/market-intel
 TRADE_DATE=20260629 scripts/hotsector_research_handoff.sh
 ```
 
-默认只生成候选池和标准信号。要继续触发 `strategy-pipeline`，显式打开：
+默认只生成候选池和标准信号，也就是第一级日更产物：
+
+```text
+candidate_universe.json + candidate_universe.csv + signals.parquet
+```
+
+这一级不会运行 `research-workspace`，也不会导出执行目标：
+
+```bash
+RUN_RESEARCH=0
+EXPORT_TARGETS=0
+```
+
+脚本未传 `TRADE_DATE` 时，会用 `hotsector latest-date` 选择关键热点/概念源共同可用的最近交易日。
+随后执行 `hotsector validate-output`，要求关键源可用、候选数量达到 `min_candidates`、
+并且 `signals.parquet` 非空。`daily` 仍会被用于流动性过滤和质量报告，但不作为第一级日更的
+默认硬门槛。质量门失败时脚本返回非 0，避免把空文件当作每日建议。
+
+要继续触发 `strategy-pipeline`，显式打开：
 
 ```bash
 RUN_RESEARCH=1 \
@@ -92,7 +110,9 @@ scripts/hotsector_research_handoff.sh
 - `scripts/systemd/hotsector-research-handoff.service`
 - `scripts/systemd/hotsector-research-handoff.timer`
 
-默认 `RUN_RESEARCH=0`，也就是只生成信号，不自动跑研究或导出执行目标。
+默认 `RUN_RESEARCH=0`、`EXPORT_TARGETS=0`，也就是只生成候选池和信号，不自动跑研究或导出执行目标。
+Linux `scripts/setup_cron.sh --layer2` 会安装并启用该 timer。Windows 使用
+`scripts/windows/install_scheduled_tasks.ps1 -Force` 注册 `Market Intel Hotsector Signals`。
 
 ## 策略口径
 
