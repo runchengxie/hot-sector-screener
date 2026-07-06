@@ -95,6 +95,22 @@ class TestScreenerBuildUniverse:
             patch("hot_sector_screener.universe_builder.load_dc_concept") as mock_dc,
             patch("hot_sector_screener.universe_builder.load_dc_concept_cons") as mock_dc_cons,
             patch("hot_sector_screener.universe_builder.load_kpl_concept_cons") as mock_kpl,
+            patch(
+                "hot_sector_screener.universe_builder.load_kpl_list",
+                return_value=pd.DataFrame(),
+            ),
+            patch(
+                "hot_sector_screener.universe_builder.load_limit_step",
+                return_value=pd.DataFrame(),
+            ),
+            patch(
+                "hot_sector_screener.universe_builder.load_limit_cpt_list",
+                return_value=pd.DataFrame(),
+            ),
+            patch(
+                "hot_sector_screener.universe_builder.load_limit_list_ths",
+                return_value=pd.DataFrame(),
+            ),
             patch("hot_sector_screener.universe_builder.load_hotspot_features") as mock_hf,
             patch("hot_sector_screener.universe_builder.load_industry_signal") as mock_ind,
             patch(
@@ -142,6 +158,22 @@ class TestScreenerBuildUniverse:
                 return_value=pd.DataFrame(),
             ),
             patch(
+                "hot_sector_screener.universe_builder.load_kpl_list",
+                return_value=pd.DataFrame(),
+            ),
+            patch(
+                "hot_sector_screener.universe_builder.load_limit_step",
+                return_value=pd.DataFrame(),
+            ),
+            patch(
+                "hot_sector_screener.universe_builder.load_limit_cpt_list",
+                return_value=pd.DataFrame(),
+            ),
+            patch(
+                "hot_sector_screener.universe_builder.load_limit_list_ths",
+                return_value=pd.DataFrame(),
+            ),
+            patch(
                 "hot_sector_screener.universe_builder.load_hotspot_features",
                 return_value=pd.DataFrame(),
             ),
@@ -178,6 +210,22 @@ class TestScreenerBuildUniverse:
             ),
             patch(
                 "hot_sector_screener.universe_builder.load_kpl_concept_cons",
+                return_value=pd.DataFrame(),
+            ),
+            patch(
+                "hot_sector_screener.universe_builder.load_kpl_list",
+                return_value=pd.DataFrame(),
+            ),
+            patch(
+                "hot_sector_screener.universe_builder.load_limit_step",
+                return_value=pd.DataFrame(),
+            ),
+            patch(
+                "hot_sector_screener.universe_builder.load_limit_cpt_list",
+                return_value=pd.DataFrame(),
+            ),
+            patch(
+                "hot_sector_screener.universe_builder.load_limit_list_ths",
                 return_value=pd.DataFrame(),
             ),
             patch(
@@ -244,6 +292,22 @@ class TestScreenerScan:
             ),
             patch(
                 "hot_sector_screener.universe_builder.load_kpl_concept_cons",
+                return_value=pd.DataFrame(),
+            ),
+            patch(
+                "hot_sector_screener.universe_builder.load_kpl_list",
+                return_value=pd.DataFrame(),
+            ),
+            patch(
+                "hot_sector_screener.universe_builder.load_limit_step",
+                return_value=pd.DataFrame(),
+            ),
+            patch(
+                "hot_sector_screener.universe_builder.load_limit_cpt_list",
+                return_value=pd.DataFrame(),
+            ),
+            patch(
+                "hot_sector_screener.universe_builder.load_limit_list_ths",
                 return_value=pd.DataFrame(),
             ),
             patch(
