@@ -129,6 +129,55 @@ class TestStockMapper:
 
         assert [s["ts_code"] for s in stocks] == ["000977.SZ"]
 
+    def test_hot_event_theme_maps_to_topic(self):
+        hot_stocks = pd.DataFrame(
+            [
+                {
+                    "ts_code": "603730.SH",
+                    "name": "岱美股份",
+                    "theme": "人形机器人、特斯拉",
+                    "lu_desc": "人形机器人+汽车零部件",
+                    "tag": "涨停",
+                    "event_source": "limit_list_ths",
+                }
+            ]
+        )
+        mapper = StockMapper(pd.DataFrame(), hot_stocks_df=hot_stocks)
+
+        stocks = mapper.map_topic_to_stocks(
+            {"topic": "人形机器人", "weight": 0.8, "related_concepts": ["人形机器人"]},
+            max_stocks=10,
+        )
+
+        assert [s["ts_code"] for s in stocks] == ["603730.SH"]
+        assert "人形机器人" in stocks[0]["source_concepts"]
+
+    def test_hot_event_rows_fill_seed_candidates(self):
+        hot_stocks = pd.DataFrame(
+            [
+                {
+                    "ts_code": "600990.SH",
+                    "name": "四创电子",
+                    "theme": "商业航天、低空经济",
+                    "lu_desc": "商业航天",
+                    "tag": "涨停",
+                    "event_source": "kpl_list",
+                }
+            ]
+        )
+        limit_step = pd.DataFrame([{"ts_code": "603137.SH", "name": "恒尚节能", "nums": 4}])
+        mapper = StockMapper(
+            pd.DataFrame(),
+            hot_stocks_df=hot_stocks,
+            limit_step_df=limit_step,
+        )
+
+        stocks = mapper.map_topics([], max_total=10)
+
+        codes = {s["ts_code"] for s in stocks}
+        assert codes == {"600990.SH", "603137.SH"}
+        assert all("今日涨停热度" in s["source_topics"] for s in stocks)
+
     def test_alias_concept_maps_to_canonical_constituents(self):
         dc_concepts = pd.DataFrame(
             [

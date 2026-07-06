@@ -24,7 +24,18 @@ def load_config(config_path: str | Path) -> dict[str, Any]:
         "config_path": str(resolved),
         "market": payload.get("market", "a_share"),
         "date": str(payload.get("date", "")),
-        "hotspot_sources": payload.get("hotspot_sources", ["ths_hot", "dc_concept", "kpl_concept"]),
+        "hotspot_sources": payload.get(
+            "hotspot_sources",
+            [
+                "dc_concept",
+                "dc_concept_cons",
+                "kpl_concept_cons",
+                "kpl_list",
+                "limit_step",
+                "limit_cpt_list",
+                "limit_list_ths",
+            ],
+        ),
         "llm": {
             "enabled": payload.get("llm", {}).get("enabled", True),
             "model": payload.get("llm", {}).get("model", "deepseek-reasoner"),
@@ -35,7 +46,7 @@ def load_config(config_path: str | Path) -> dict[str, Any]:
             "max_candidates": payload.get("universe", {}).get("max_candidates", 100),
             "min_candidates": payload.get("universe", {}).get("min_candidates", 30),
             "min_daily_amount_rank_pct": payload.get("universe", {}).get(
-                "min_daily_amount_rank_pct", 80
+                "min_daily_amount_rank_pct", 60
             ),
             "max_price": payload.get("universe", {}).get("max_price", 200.0),
             "min_price": payload.get("universe", {}).get("min_price", 2.0),
@@ -70,7 +81,15 @@ def default_config() -> dict[str, Any]:
     return {
         "market": "a_share",
         "date": "",
-        "hotspot_sources": ["ths_hot", "dc_concept", "kpl_concept"],
+        "hotspot_sources": [
+            "dc_concept",
+            "dc_concept_cons",
+            "kpl_concept_cons",
+            "kpl_list",
+            "limit_step",
+            "limit_cpt_list",
+            "limit_list_ths",
+        ],
         "llm": {
             "enabled": True,
             "model": "deepseek-reasoner",
@@ -80,7 +99,7 @@ def default_config() -> dict[str, Any]:
         "universe": {
             "max_candidates": 100,
             "min_candidates": 30,
-            "min_daily_amount_rank_pct": 80,
+            "min_daily_amount_rank_pct": 60,
             "max_price": 200.0,
             "min_price": 2.0,
             "max_st_allow": False,

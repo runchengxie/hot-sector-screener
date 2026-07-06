@@ -36,13 +36,24 @@ def _is_st_name(name: str) -> bool:
     return upper.startswith(("ST", "*ST")) or "退市" in upper
 
 
+def _split_concept_text(value: Any) -> list[str]:
+    if value is None:
+        return []
+    text = str(value).strip()
+    if not text or text.lower() == "nan":
+        return []
+    parts = re.split(r"[、,+，/|;；]+", text)
+    return [part.strip() for part in parts if part.strip()]
+
+
 class StockMapper:
     """Deterministically map topics to candidate stocks.
 
     Mapping logic:
       1. Topic → related concept/theme names
       2. Concept/theme → constituent stocks (from dc_concept_cons / kpl_concept_cons)
-      3. Deduplicate and score by relevance
+      3. Same-day limit-up/hot-list rows add topical matches and heat seeds
+      4. Deduplicate and score by relevance
     """
 
     def __init__(  # noqa: C901
@@ -50,10 +61,16 @@ class StockMapper:
         dc_cons_df: pd.DataFrame,
         kpl_cons_df: pd.DataFrame | None = None,
         dc_concept_df: pd.DataFrame | None = None,
+        hot_stocks_df: pd.DataFrame | None = None,
+        limit_step_df: pd.DataFrame | None = None,
+        limit_cpt_df: pd.DataFrame | None = None,
     ):
         self.dc_cons = dc_cons_df
         self.kpl_cons = kpl_cons_df if kpl_cons_df is not None else pd.DataFrame()
         self.dc_concept = dc_concept_df if dc_concept_df is not None else pd.DataFrame()
+        self.hot_stocks = hot_stocks_df if hot_stocks_df is not None else pd.DataFrame()
+        self.limit_step = limit_step_df if limit_step_df is not None else pd.DataFrame()
+        self.limit_cpt = limit_cpt_df if limit_cpt_df is not None else pd.DataFrame()
 
         # Build lookup: theme_code → set of ts_code
         self._dc_code_lookup: dict[str, set[str]] = {}
@@ -81,6 +98,10 @@ class StockMapper:
         # Use dc_concept (which has name + theme_code) to bridge
         self._dc_name_lookup: dict[str, set[str]] = {}
         self._concept_strength: dict[str, float] = {}
+        self._event_lookup: dict[str, set[str]] = {}
+        self._event_stock_concepts: dict[str, set[str]] = {}
+        self._hot_seed_scores: dict[str, float] = {}
+        self._hot_seed_sources: dict[str, set[str]] = {}
         if not self.dc_concept.empty and "name" in self.dc_concept.columns:
             for _, row in self.dc_concept.iterrows():
                 name = str(row.get("name", "")).strip()
@@ -109,15 +130,34 @@ class StockMapper:
                 if key and code:
                     for term in expand_concept_terms(key):
                         self._kpl_lookup.setdefault(term, set()).add(code)
-                    name = str(row.get("name", "")).strip()
-                    if name:
-                        self._name_by_code.setdefault(code, name)
                     hot_num = _safe_float(row.get("hot_num"))
                     if hot_num > 0:
                         self._stock_hot_score[code] = max(
                             self._stock_hot_score.get(code, 1.0),
                             1.0 + min(math.log1p(hot_num) / 5.0, 0.5),
                         )
+
+        if not self.hot_stocks.empty:
+            for _, row in self.hot_stocks.iterrows():
+                self._record_hot_stock(row)
+
+        if not self.limit_step.empty and "ts_code" in self.limit_step.columns:
+            for _, row in self.limit_step.iterrows():
+                code = _normalize_ts_code(str(row.get("ts_code", "")))
+                if not code:
+                    continue
+                name = str(row.get("name", "")).strip()
+                if name:
+                    self._name_by_code[code] = name
+                score = 1.0 + min(_safe_float(row.get("nums")) / 8.0, 0.75)
+                self._stock_hot_score[code] = max(self._stock_hot_score.get(code, 1.0), score)
+                self._hot_seed_scores[code] = max(self._hot_seed_scores.get(code, 0.0), score)
+                self._hot_seed_sources.setdefault(code, set()).add("limit_step")
+                self._event_stock_concepts.setdefault(code, set()).add("连板天梯")
+
+        if not self.limit_cpt.empty and "name" in self.limit_cpt.columns:
+            for _, row in self.limit_cpt.iterrows():
+                self._record_limit_concept(row)
 
     def _add_concept_codes(self, concept_name: str, codes: set[str]) -> None:
         for term in expand_concept_terms(concept_name):
@@ -131,6 +171,73 @@ class StockMapper:
             self._concept_strength[canonical] = max(
                 self._concept_strength.get(canonical, 1.0), score
             )
+
+    def _add_event_codes(self, concept_name: str, code: str) -> None:
+        if not concept_name or not code:
+            return
+        for term in expand_concept_terms(concept_name):
+            self._event_lookup.setdefault(term, set()).add(code)
+
+    @staticmethod
+    def _event_row_score(row: pd.Series) -> float:
+        score = 0.45
+        tag = str(row.get("tag", "") or "")
+        limit_type = str(row.get("limit_type", "") or "")
+        status = str(row.get("status", "") or "")
+        if "涨停" in tag or "涨停" in limit_type:
+            score += 0.45
+        if "炸" in tag or "炸" in limit_type:
+            score += 0.15
+        if "T字" in status or "一字" in status:
+            score += 0.1
+        score += min(abs(_safe_float(row.get("pct_chg"))) / 20.0, 0.35)
+        score += min(math.log1p(max(_safe_float(row.get("bid_amount")), 0.0)) / 30.0, 0.25)
+        return score
+
+    @staticmethod
+    def _limit_concept_score(row: pd.Series) -> float:
+        rank = _safe_float(row.get("rank"))
+        up_nums = _safe_float(row.get("up_nums"))
+        cons_nums = _safe_float(row.get("cons_nums"))
+        pct_chg = abs(_safe_float(row.get("pct_chg")))
+        rank_bonus = max((25.0 - rank) / 25.0, 0.0) if rank > 0 else 0.0
+        return (
+            1.0
+            + min(up_nums / 60.0, 0.6)
+            + min(cons_nums / 40.0, 0.4)
+            + min(pct_chg / 10.0, 0.3)
+            + rank_bonus * 0.3
+        )
+
+    def _record_hot_stock(self, row: pd.Series) -> None:
+        code = _normalize_ts_code(str(row.get("ts_code", "")))
+        if not code:
+            return
+        name = str(row.get("name", "")).strip()
+        if name:
+            self._name_by_code[code] = name
+
+        source = str(row.get("event_source", "") or "hot_event")
+        score = self._event_row_score(row)
+        self._stock_hot_score[code] = max(self._stock_hot_score.get(code, 1.0), 1.0 + score)
+        self._hot_seed_scores[code] = max(self._hot_seed_scores.get(code, 0.0), score)
+        self._hot_seed_sources.setdefault(code, set()).add(source)
+
+        concepts: list[str] = []
+        for column in ("theme", "lu_desc", "tag"):
+            concepts.extend(_split_concept_text(row.get(column)))
+        for concept in concepts:
+            if not concept:
+                continue
+            canonical = canonicalize_concept(concept) or concept
+            self._event_stock_concepts.setdefault(code, set()).add(canonical)
+            self._add_event_codes(concept, code)
+
+    def _record_limit_concept(self, row: pd.Series) -> None:
+        name = str(row.get("name", "")).strip()
+        if not name or "ST" in name.upper():
+            return
+        self._record_concept_strength(name, self._limit_concept_score(row))
 
     @staticmethod
     def _row_concept_strength(row: pd.Series) -> float:
@@ -149,6 +256,18 @@ class StockMapper:
     def _stock_heat_score(self, code: str) -> float:
         return self._stock_hot_score.get(code, 1.0)
 
+    @staticmethod
+    def _fuzzy_lookup_matches(
+        lookup: dict[str, set[str]],
+        term_lowers: list[str],
+    ) -> set[str]:
+        results: set[str] = set()
+        for name, codes in lookup.items():
+            name_lower = name.lower()
+            if any(term in name_lower or name_lower in term for term in term_lowers):
+                results |= codes
+        return results
+
     def _match_concept(self, concept_name: str) -> set[str]:
         """Match a concept name against all lookups, return matching ts_codes."""
         results: set[str] = set()
@@ -161,10 +280,7 @@ class StockMapper:
 
         # 2. Try fuzzy match in dc_name_lookup keys
         term_lowers = [term.lower() for term in terms]
-        for name, codes in self._dc_name_lookup.items():
-            name_lower = name.lower()
-            if any(term in name_lower or name_lower in term for term in term_lowers):
-                results |= codes
+        results |= self._fuzzy_lookup_matches(self._dc_name_lookup, term_lowers)
 
         # 3. Try exact match in dc_code_lookup
         for term in terms:
@@ -177,10 +293,13 @@ class StockMapper:
         for term in terms:
             if term in self._kpl_lookup:
                 results |= self._kpl_lookup[term]
-        for kpl_key, codes in self._kpl_lookup.items():
-            kpl_lower = kpl_key.lower()
-            if any(term in kpl_lower or kpl_lower in term for term in term_lowers):
-                results |= codes
+        results |= self._fuzzy_lookup_matches(self._kpl_lookup, term_lowers)
+
+        # 5. Try same-day event stocks from limit-up/hot-list rows.
+        for term in terms:
+            if term in self._event_lookup:
+                results |= self._event_lookup[term]
+        results |= self._fuzzy_lookup_matches(self._event_lookup, term_lowers)
 
         return results
 
@@ -273,6 +392,26 @@ class StockMapper:
 
         return result
 
+    def hotspot_seed_candidates(self, max_stocks: int = 50) -> list[dict[str, Any]]:
+        if max_stocks <= 0 or not self._hot_seed_scores:
+            return []
+        sorted_codes = sorted(self._hot_seed_scores.items(), key=lambda item: -float(item[1]))
+        max_score = max((float(score) for _, score in sorted_codes), default=1.0)
+        result: list[dict[str, Any]] = []
+        for code, score in sorted_codes[:max_stocks]:
+            result.append(
+                {
+                    "ts_code": code,
+                    "name": self._name_by_code.get(code, ""),
+                    "score": round(float(score), 4),
+                    "relevance": round(min(float(score) / max_score, 1.0), 3),
+                    "source_topics": ["今日涨停热度"],
+                    "source_concepts": sorted(self._event_stock_concepts.get(code, set()))[:8],
+                    "match_sources": sorted(self._hot_seed_sources.get(code, set())),
+                }
+            )
+        return result
+
     def map_topics(
         self,
         topics: list[dict[str, Any]],
@@ -284,26 +423,41 @@ class StockMapper:
         Stocks can appear under multiple topics; the highest relevance is kept.
         """
         seen: dict[str, dict[str, Any]] = {}
+
+        def merge_stock(stock: dict[str, Any]) -> None:
+            code = stock["ts_code"]
+            source_topic = stock.get("source_topic")
+            source_topics = list(stock.get("source_topics", []))
+            if source_topic and source_topic not in source_topics:
+                source_topics.append(source_topic)
+            source_concepts = list(stock.get("source_concepts", []))
+            if code in seen:
+                seen[code]["score"] += stock.get("score", stock["relevance"])
+                if stock.get("name") and not seen[code].get("name"):
+                    seen[code]["name"] = stock["name"]
+                for topic_name in source_topics:
+                    if topic_name not in seen[code]["source_topics"]:
+                        seen[code]["source_topics"].append(topic_name)
+                for concept in source_concepts:
+                    if concept not in seen[code]["source_concepts"]:
+                        seen[code]["source_concepts"].append(concept)
+            else:
+                seen[code] = {
+                    "ts_code": code,
+                    "name": stock.get("name", ""),
+                    "score": stock.get("score", stock["relevance"]),
+                    "relevance": stock["relevance"],
+                    "source_topics": source_topics,
+                    "source_concepts": source_concepts,
+                }
+
         for topic in topics:
             stocks = self.map_topic_to_stocks(topic, max_stocks=max_stocks_per_topic)
             for stock in stocks:
-                code = stock["ts_code"]
-                if code in seen:
-                    seen[code]["score"] += stock.get("score", stock["relevance"])
-                    if stock["source_topic"] not in seen[code]["source_topics"]:
-                        seen[code]["source_topics"].append(stock["source_topic"])
-                    for concept in stock.get("source_concepts", []):
-                        if concept not in seen[code]["source_concepts"]:
-                            seen[code]["source_concepts"].append(concept)
-                else:
-                    seen[code] = {
-                        "ts_code": code,
-                        "name": stock["name"],
-                        "score": stock.get("score", stock["relevance"]),
-                        "relevance": stock["relevance"],
-                        "source_topics": [stock["source_topic"]],
-                        "source_concepts": list(stock.get("source_concepts", [])),
-                    }
+                merge_stock(stock)
+
+        for stock in self.hotspot_seed_candidates(max_total - len(seen)):
+            merge_stock(stock)
 
         max_score = max((float(item.get("score", 0.0)) for item in seen.values()), default=1.0)
         for item in seen.values():

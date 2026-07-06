@@ -38,10 +38,13 @@ def test_parse_source_list_accepts_comma_separated_text():
 
 def test_default_required_sources_keep_daily_optional_for_level_one():
     assert DEFAULT_REQUIRED_SOURCES == (
-        "ths_hot",
         "dc_concept",
         "dc_concept_cons",
         "kpl_concept_cons",
+        "kpl_list",
+        "limit_step",
+        "limit_cpt_list",
+        "limit_list_ths",
     )
 
 
@@ -73,7 +76,8 @@ def test_validate_candidate_output_reports_missing_sources_and_empty_signals(tmp
 
     issues = validate_candidate_output(tmp_path)
 
-    assert "required source unavailable: ths_hot" in issues
+    assert "required source unavailable: dc_concept" in issues
+    assert "required source unavailable: limit_cpt_list" in issues
     assert "candidate count 0 is below min_candidates 2" in issues
     assert "signals.parquet is empty" in issues
     assert any(issue.startswith("missing signals.meta.json") for issue in issues)

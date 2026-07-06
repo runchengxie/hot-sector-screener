@@ -15,7 +15,7 @@ class TestDefaultConfig:
         assert "output" in cfg
         assert cfg["universe"]["max_candidates"] == 100
         assert cfg["universe"]["min_candidates"] == 30
-        assert len(cfg["hotspot_sources"]) == 3
+        assert len(cfg["hotspot_sources"]) == 7
         assert cfg["market"] == "a_share"
         assert cfg["rotation_signal_dir"] is None
 
@@ -29,7 +29,7 @@ class TestDefaultConfig:
     def test_default_universe_config(self):
         cfg = default_config()
         uni = cfg["universe"]
-        assert uni["min_daily_amount_rank_pct"] == 80
+        assert uni["min_daily_amount_rank_pct"] == 60
         assert uni["max_price"] == 200.0
         assert uni["min_price"] == 2.0
         assert uni["max_st_allow"] is False

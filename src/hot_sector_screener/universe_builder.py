@@ -16,6 +16,10 @@ from .data_sources.platform import (
     load_dc_concept_cons,
     load_hotspot_features,
     load_kpl_concept_cons,
+    load_kpl_list,
+    load_limit_cpt_list,
+    load_limit_list_ths,
+    load_limit_step,
     load_ths_hot,
 )
 from .data_sources.rotation_signal import load_industry_signal
@@ -45,6 +49,64 @@ def _load_optional_daily(date_str: str) -> pd.DataFrame:
         return load_daily_data(date_str)
     except RuntimeError:
         return pd.DataFrame()
+
+
+def _safe_float(value: Any, default: float = 0.0) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _with_event_source(df: pd.DataFrame, source: str) -> pd.DataFrame:
+    if df.empty:
+        return df
+    out = df.copy()
+    out["event_source"] = source
+    return out
+
+
+def _event_stock_frame(kpl_list: pd.DataFrame, limit_list_ths: pd.DataFrame) -> pd.DataFrame:
+    frames = [
+        _with_event_source(kpl_list, "kpl_list"),
+        _with_event_source(limit_list_ths, "limit_list_ths"),
+    ]
+    frames = [frame for frame in frames if not frame.empty]
+    if not frames:
+        return pd.DataFrame()
+    return pd.concat(frames, ignore_index=True, sort=False)
+
+
+def _limit_cpt_topic_records(limit_cpt: pd.DataFrame) -> list[dict[str, Any]]:
+    if limit_cpt.empty:
+        return []
+    records: list[dict[str, Any]] = []
+    for _, row in limit_cpt.iterrows():
+        name = str(row.get("name", "")).strip()
+        if not name or "ST" in name.upper():
+            continue
+        rank = _safe_float(row.get("rank"), 999.0)
+        up_nums = _safe_float(row.get("up_nums"))
+        cons_nums = _safe_float(row.get("cons_nums"))
+        pct_chg = _safe_float(row.get("pct_chg"))
+        rank_strength = max(1000.0 - rank * 25.0, 100.0) if rank > 0 else 100.0
+        records.append(
+            {
+                "name": name,
+                "hot": max(1.0, 10000.0 - rank),
+                "strength": max(
+                    up_nums * 20.0,
+                    cons_nums * 20.0,
+                    abs(pct_chg) * 100.0,
+                    rank_strength,
+                ),
+                "pct_change": pct_chg,
+                "z_t_num": up_nums,
+                "lead_stock": "",
+                "source_signal": "limit_cpt_list",
+            }
+        )
+    return records
 
 
 def _future_daily_frames(
@@ -108,6 +170,10 @@ class Screener:
         dc = load_dc_concept(date_str)
         dc_cons = load_dc_concept_cons(date_str)
         kpl_cons = load_kpl_concept_cons(date_str)
+        kpl_list = load_kpl_list(date_str)
+        limit_step = load_limit_step(date_str)
+        limit_cpt = load_limit_cpt_list(date_str)
+        limit_list_ths = load_limit_list_ths(date_str)
         hf = load_hotspot_features(date_str)
         ind_signal = load_industry_signal()
         daily = _load_optional_daily(date_str)
@@ -135,6 +201,22 @@ class Screener:
             "kpl_concept_cons": {
                 "rows": len(kpl_cons),
                 "columns": list(kpl_cons.columns) if not kpl_cons.empty else [],
+            },
+            "kpl_list": {
+                "rows": len(kpl_list),
+                "columns": list(kpl_list.columns) if not kpl_list.empty else [],
+            },
+            "limit_step": {
+                "rows": len(limit_step),
+                "columns": list(limit_step.columns) if not limit_step.empty else [],
+            },
+            "limit_cpt_list": {
+                "rows": len(limit_cpt),
+                "columns": list(limit_cpt.columns) if not limit_cpt.empty else [],
+            },
+            "limit_list_ths": {
+                "rows": len(limit_list_ths),
+                "columns": list(limit_list_ths.columns) if not limit_list_ths.empty else [],
             },
             "hotspot_features": {
                 "rows": len(hf),
@@ -210,6 +292,10 @@ class Screener:
         dc = load_dc_concept(date_str)
         dc_cons = load_dc_concept_cons(date_str)
         kpl_cons = load_kpl_concept_cons(date_str)
+        kpl_list = load_kpl_list(date_str)
+        limit_step = load_limit_step(date_str)
+        limit_cpt = load_limit_cpt_list(date_str)
+        limit_list_ths = load_limit_list_ths(date_str)
         hf = load_hotspot_features(date_str)
         ind_signal = load_industry_signal()
         daily = _load_optional_daily(date_str)
@@ -225,6 +311,7 @@ class Screener:
         # 2. Classify topics (or use pre-classified)
         ths_stocks = _df_to_dicts(ths)
         dc_list = _df_to_dicts(dc)
+        classifier_concepts = dc_list + _limit_cpt_topic_records(limit_cpt)
         ind_list = _df_to_dicts(ind_signal) if not ind_signal.empty else None
 
         if topics is not None:
@@ -233,13 +320,20 @@ class Screener:
         else:
             topics = self.classifier.classify(
                 ths_hot_stocks=ths_stocks,
-                dc_concepts=dc_list,
+                dc_concepts=classifier_concepts,
                 industry_signals=ind_list,
                 latest_date=date_str,
             )
 
         # 3. Map topics → stocks
-        mapper = StockMapper(dc_cons, kpl_cons, dc_concept_df=dc)
+        mapper = StockMapper(
+            dc_cons,
+            kpl_cons,
+            dc_concept_df=dc,
+            hot_stocks_df=_event_stock_frame(kpl_list, limit_list_ths),
+            limit_step_df=limit_step,
+            limit_cpt_df=limit_cpt,
+        )
         raw_stocks = mapper.map_topics(
             topics,
             max_stocks_per_topic=self.stocks_per_topic,
@@ -323,6 +417,10 @@ class Screener:
                 "dc_concept_available": len(dc) > 0,
                 "dc_concept_cons_available": len(dc_cons) > 0,
                 "kpl_concept_cons_available": len(kpl_cons) > 0,
+                "kpl_list_available": len(kpl_list) > 0,
+                "limit_step_available": len(limit_step) > 0,
+                "limit_cpt_list_available": len(limit_cpt) > 0,
+                "limit_list_ths_available": len(limit_list_ths) > 0,
                 "hotspot_features_available": len(hf) > 0,
                 "daily_available": len(daily) > 0,
                 "daily_history_available": len(daily_history) > 0,

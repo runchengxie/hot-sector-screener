@@ -7,12 +7,16 @@ from typing import Any
 import pandas as pd
 
 DEFAULT_REQUIRED_SOURCES = (
-    # Level-1 candidate signals require hotspot/concept sources. Daily bars are
-    # still consumed for optional liquidity filtering and quality reporting.
-    "ths_hot",
+    # Level-1 candidate signals require concept constituents plus same-day
+    # limit-up/hotspot event sources. ths_hot is useful when fresh, but it can
+    # lag while these sources already have the target trade date.
     "dc_concept",
     "dc_concept_cons",
     "kpl_concept_cons",
+    "kpl_list",
+    "limit_step",
+    "limit_cpt_list",
+    "limit_list_ths",
 )
 
 

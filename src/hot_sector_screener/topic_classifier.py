@@ -228,21 +228,23 @@ class TopicClassifier:
 
         # From dc_concepts — sort by hot, take top 5
         sorted_dc = sorted(dc_concepts, key=lambda c: float(c.get("hot", 0)), reverse=True)
-        strengths = [float(c.get("strength", 0)) for c in sorted_dc if c.get("strength")]
+        strengths = [
+            min(float(c.get("strength", 0)), 1000.0) for c in sorted_dc if c.get("strength")
+        ]
         max_strength = max(strengths) if strengths else 1.0
 
         for c in sorted_dc[:5]:
             name = c.get("name", "")
             if name and name not in seen:
                 seen.add(name)
-                raw_strength = float(c.get("strength", 0))
+                raw_strength = min(float(c.get("strength", 0)), 1000.0)
                 topics.append(
                     {
                         "topic": name,
                         "weight": round(min(raw_strength / max_strength, 1.0), 3),
                         "reasoning": f"概念板块 {name} 今日领涨",
                         "related_concepts": [name],
-                        "source_signals": ["dc_concept"],
+                        "source_signals": [str(c.get("source_signal") or "dc_concept")],
                     }
                 )
 

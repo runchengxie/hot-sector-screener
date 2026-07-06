@@ -6,6 +6,19 @@ from typing import Any
 
 import pandas as pd
 
+_A_SHARE_SOURCE_DIRS = {
+    "ths_hot": ("assets", "tushare", "a_share", "ths_hot"),
+    "dc_concept": ("assets", "tushare", "a_share", "dc_concept"),
+    "dc_concept_cons": ("assets", "tushare", "a_share", "dc_concept_cons"),
+    "kpl_concept_cons": ("assets", "tushare", "a_share", "kpl_concept_cons"),
+    "kpl_list": ("assets", "tushare", "a_share", "kpl_list"),
+    "limit_step": ("assets", "tushare", "a_share", "limit_step"),
+    "limit_cpt_list": ("assets", "tushare", "a_share", "limit_cpt_list"),
+    "limit_list_ths": ("assets", "tushare", "a_share", "limit_list_ths"),
+    "hotspot_features": ("assets", "tushare", "a_share", "hotspot_features"),
+    "daily": ("assets", "tushare", "a_share", "daily"),
+}
+
 
 def _resolve_platform_root() -> Path:
     root = os.environ.get("DATA_PLATFORM_ROOT")
@@ -17,6 +30,12 @@ def _resolve_platform_root() -> Path:
     return Path(root).expanduser().resolve()
 
 
+def _source_dir(source: str) -> Path:
+    root = _resolve_platform_root()
+    parts = _A_SHARE_SOURCE_DIRS[source]
+    return root.joinpath(*parts)
+
+
 def _resolve_latest_data_dir(base_dir: Path) -> Path | None:
     """Resolve the actual data directory containing Hive partitions.
 
@@ -25,14 +44,28 @@ def _resolve_latest_data_dir(base_dir: Path) -> Path | None:
     """
     if not base_dir.is_dir():
         return None
-    # Find the latest subdirectory (there should be only one: a_share_all_*_latest)
-    subdirs = [d for d in base_dir.iterdir() if d.is_dir()]
-    if not subdirs:
+
+    candidates: list[Path] = []
+    direct_data = base_dir / "data"
+    if direct_data.is_dir():
+        candidates.append(direct_data)
+    for subdir in sorted(d for d in base_dir.iterdir() if d.is_dir()):
+        data_dir = subdir / "data"
+        candidates.append(data_dir if data_dir.is_dir() else subdir)
+
+    partitioned = [path for path in candidates if any(path.glob("trade_date=*"))]
+    if not partitioned:
         return None
-    # Pick the first (should be the latest)
-    latest = sorted(subdirs)[-1]
-    data_dir = latest / "data"
-    return data_dir if data_dir.is_dir() else latest
+
+    def latest_partition(path: Path) -> str:
+        dates = sorted(
+            entry.name.split("=", 1)[1]
+            for entry in path.iterdir()
+            if entry.is_dir() and entry.name.startswith("trade_date=")
+        )
+        return dates[-1] if dates else ""
+
+    return max(partitioned, key=latest_partition)
 
 
 def _load_hive_partitioned(
@@ -140,6 +173,87 @@ def load_kpl_concept_cons(trade_date: str) -> pd.DataFrame:
     )
 
 
+def load_kpl_list(trade_date: str, limit: int = 300) -> pd.DataFrame:
+    """Load 开盘啦涨停/炸板榜单 for a given trade date."""
+    kpl_dir = _source_dir("kpl_list")
+    if not kpl_dir.is_dir():
+        return pd.DataFrame()
+    return _load_hive_partitioned(
+        kpl_dir,
+        trade_date,
+        columns=[
+            "ts_code",
+            "name",
+            "trade_date",
+            "lu_desc",
+            "tag",
+            "theme",
+            "status",
+            "pct_chg",
+            "bid_amount",
+            "amount",
+            "turnover_rate",
+        ],
+    ).head(limit)
+
+
+def load_limit_step(trade_date: str) -> pd.DataFrame:
+    """Load A 股连板天梯 for a given trade date."""
+    step_dir = _source_dir("limit_step")
+    if not step_dir.is_dir():
+        return pd.DataFrame()
+    return _load_hive_partitioned(
+        step_dir,
+        trade_date,
+        columns=["ts_code", "name", "trade_date", "nums"],
+    )
+
+
+def load_limit_cpt_list(trade_date: str) -> pd.DataFrame:
+    """Load 涨停最强板块统计 for a given trade date."""
+    cpt_dir = _source_dir("limit_cpt_list")
+    if not cpt_dir.is_dir():
+        return pd.DataFrame()
+    return _load_hive_partitioned(
+        cpt_dir,
+        trade_date,
+        columns=[
+            "ts_code",
+            "name",
+            "trade_date",
+            "days",
+            "up_stat",
+            "cons_nums",
+            "up_nums",
+            "pct_chg",
+            "rank",
+        ],
+    )
+
+
+def load_limit_list_ths(trade_date: str, limit: int = 300) -> pd.DataFrame:
+    """Load 同花顺涨跌停明细 for a given trade date."""
+    limit_dir = _source_dir("limit_list_ths")
+    if not limit_dir.is_dir():
+        return pd.DataFrame()
+    return _load_hive_partitioned(
+        limit_dir,
+        trade_date,
+        columns=[
+            "ts_code",
+            "name",
+            "trade_date",
+            "limit_type",
+            "pct_chg",
+            "turnover_rate",
+            "free_float",
+            "lu_desc",
+            "tag",
+            "status",
+        ],
+    ).head(limit)
+
+
 def load_daily_data(trade_date: str) -> pd.DataFrame:
     """Load daily A-share stock price data for a given trade date.
 
@@ -166,17 +280,10 @@ def load_hotspot_features(trade_date: str) -> pd.DataFrame:
 
 def list_available_dates(source: str = "ths_hot") -> list[str]:
     """List available trade dates for a given hotspot data source."""
-    root = _resolve_platform_root()
-    source_map = {
-        "ths_hot": root / "assets" / "tushare" / "a_share" / "ths_hot",
-        "dc_concept": root / "assets" / "tushare" / "a_share" / "dc_concept",
-        "dc_concept_cons": root / "assets" / "tushare" / "a_share" / "dc_concept_cons",
-        "kpl_concept_cons": root / "assets" / "tushare" / "a_share" / "kpl_concept_cons",
-        "hotspot_features": root / "assets" / "tushare" / "a_share" / "hotspot_features",
-        "daily": root / "assets" / "tushare" / "a_share" / "daily",
-    }
-    source_dir = source_map.get(source)
-    if source_dir is None or not source_dir.is_dir():
+    if source not in _A_SHARE_SOURCE_DIRS:
+        return []
+    source_dir = _source_dir(source)
+    if not source_dir.is_dir():
         return []
     data_dir = _resolve_latest_data_dir(source_dir)
     if data_dir is None or not data_dir.is_dir():
@@ -210,6 +317,10 @@ def summarize_data_coverage() -> dict[str, Any]:
         "dc_concept",
         "dc_concept_cons",
         "kpl_concept_cons",
+        "kpl_list",
+        "limit_step",
+        "limit_cpt_list",
+        "limit_list_ths",
         "hotspot_features",
         "daily",
     ]
