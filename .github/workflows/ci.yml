@@ -66,6 +66,6 @@ jobs:
         run: uv run --extra dev ruff check .
       - name: ty
         run: uv run --extra dev ty check
-      - name: BasedPyright advisory
-        continue-on-error: true
-        run: uv run --extra dev python -m basedpyright
+      # - name: BasedPyright advisory
+      #   continue-on-error: true
+      #   run: uv run --extra dev python -m basedpyright
