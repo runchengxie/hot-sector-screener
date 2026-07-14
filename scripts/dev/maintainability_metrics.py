@@ -20,7 +20,7 @@ from pathlib import Path
 # ── Per-project configuration ────────────────────────────────────────────────
 # Override these after importing or edit in-place per project.
 
-DEFAULT_ROOTS: tuple[str, ...] = ('src', 'scripts', 'tests')
+DEFAULT_ROOTS: tuple[str, ...] = ("src", "scripts", "tests")
 DEFAULT_LIMIT = 10
 
 # Ratchet budgets: freeze current state. After initial setup, these should match
@@ -38,6 +38,7 @@ DEFAULT_RATCHET_BUDGETS: dict[str, int] = {
 
 
 # ── Data types ───────────────────────────────────────────────────────────────
+
 
 @dataclass(frozen=True)
 class FileMetric:
@@ -87,6 +88,7 @@ class Metrics:
 
 # ── Discovery ────────────────────────────────────────────────────────────────
 
+
 def _find_repo_root() -> Path:
     """Walk up from this script until we find pyproject.toml."""
     candidate = Path(__file__).resolve().parent
@@ -115,13 +117,12 @@ def discover_python_files(
     for root_name in roots:
         root = repo_root / root_name
         if root.exists():
-            files.extend(
-                path for path in root.rglob("*.py") if "__pycache__" not in path.parts
-            )
+            files.extend(path for path in root.rglob("*.py") if "__pycache__" not in path.parts)
     return sorted(files)
 
 
 # ── Metrics collection ───────────────────────────────────────────────────────
+
 
 def _relative_path(repo_root: Path, path: Path) -> str:
     try:
@@ -130,9 +131,7 @@ def _relative_path(repo_root: Path, path: Path) -> str:
         return path.as_posix()
 
 
-def _function_metrics_for_file(
-    repo_root: Path, path: Path, text: str
-) -> list[FunctionMetric]:
+def _function_metrics_for_file(repo_root: Path, path: Path, text: str) -> list[FunctionMetric]:
     try:
         tree = ast.parse(text)
     except SyntaxError:
@@ -165,9 +164,7 @@ def _c901_file_ignore_count(repo_root: Path) -> int:
     import tomllib
 
     config = tomllib.loads(pyproject.read_text(encoding="utf-8"))
-    per_file = (
-        config.get("tool", {}).get("ruff", {}).get("lint", {}).get("per-file-ignores", {})
-    )
+    per_file = config.get("tool", {}).get("ruff", {}).get("lint", {}).get("per-file-ignores", {})
     return sum(1 for values in per_file.values() if "C901" in values)
 
 
@@ -198,9 +195,7 @@ def collect_metrics(
         function_metrics.extend(_function_metrics_for_file(repo_root, path, text))
 
     largest_files = sorted(file_metrics, key=lambda item: item.lines, reverse=True)[:limit]
-    largest_functions = sorted(
-        function_metrics, key=lambda item: item.lines, reverse=True
-    )[:limit]
+    largest_functions = sorted(function_metrics, key=lambda item: item.lines, reverse=True)[:limit]
 
     return Metrics(
         roots=list(roots),
@@ -236,6 +231,7 @@ def check_ratchet_budgets(
 
 
 # ── Output formatters ────────────────────────────────────────────────────────
+
 
 def format_markdown(metrics: Metrics) -> str:
     lines = [
@@ -287,6 +283,7 @@ def format_text(metrics: Metrics) -> str:
 
 
 # ── CLI ──────────────────────────────────────────────────────────────────────
+
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(

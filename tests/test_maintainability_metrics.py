@@ -37,7 +37,10 @@ def test_maintainability_metrics_cli_outputs_json():
     repo_root = _repo_root()
     result = subprocess.run(
         ["python", "scripts/dev/maintainability_metrics.py", "--json", "--limit", "2"],
-        cwd=repo_root, capture_output=True, text=True, check=False,
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+        check=False,
     )
     assert result.returncode == 0, result.stderr
     payload = json.loads(result.stdout)
@@ -50,6 +53,9 @@ def test_maintainability_metrics_ratchet_flag_passes():
     repo_root = _repo_root()
     result = subprocess.run(
         ["python", "scripts/dev/maintainability_metrics.py", "--ratchet"],
-        cwd=repo_root, capture_output=True, text=True, check=False,
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+        check=False,
     )
     assert result.returncode == 0, f"Ratchet flag failed:\n{result.stderr}"
