@@ -241,12 +241,12 @@ def _fmt_num(val: Any) -> str:
 def call_deepseek(prompt: str, model: str | None = None) -> str:
     """Call DeepSeek API and return the response text."""
 
-    api_key = os.environ.get("DEEPSEEK_API_KEY") or os.environ.get("OPENAI_API_KEY")
+    api_key = os.environ.get("DEEPSEEK_API_KEY")
     api_url = os.environ.get("LLM_API_URL") or "https://api.deepseek.com/v1"
     model_name = model or os.environ.get("LLM_MODEL") or "deepseek-chat"
 
     if not api_key:
-        raise RuntimeError("No API key configured. Set DEEPSEEK_API_KEY or OPENAI_API_KEY.")
+        raise RuntimeError("No DeepSeek API key configured. Set DEEPSEEK_API_KEY.")
 
     payload = json.dumps(
         {

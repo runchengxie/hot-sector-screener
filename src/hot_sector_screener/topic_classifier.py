@@ -130,16 +130,17 @@ def _call_llm_for_topics(prompt: str) -> str:
     """Call the LLM to classify topics.
 
     Supports:
-    1. OpenAI-compatible API via LLM_API_KEY / LLM_API_URL / LLM_MODEL
-    2. Direct HTTP call when running standalone
+    1. OpenAI-compatible API via LLM_API_KEY or DEEPSEEK_API_KEY
+    2. Optional endpoint/model overrides via LLM_API_URL / LLM_MODEL
+    3. Direct HTTP call when running standalone
     """
-    api_key = _os.environ.get("LLM_API_KEY") or _os.environ.get("OPENAI_API_KEY")
+    api_key = _os.environ.get("LLM_API_KEY") or _os.environ.get("DEEPSEEK_API_KEY")
     api_url = _os.environ.get("LLM_API_URL") or "https://api.deepseek.com/v1"
     model = _os.environ.get("LLM_MODEL", "deepseek-reasoner")
 
     if not api_key:
         raise RuntimeError(
-            "No LLM API key configured. Set LLM_API_KEY or OPENAI_API_KEY. "
+            "No LLM API key configured. Set LLM_API_KEY or DEEPSEEK_API_KEY. "
             "When running inside Hermes Agent, pass through the session's model."
         )
 
