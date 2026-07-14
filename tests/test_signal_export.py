@@ -65,5 +65,5 @@ def test_write_signal_artifacts_writes_parquet_csv_and_metadata(tmp_path):
     assert (tmp_path / "signals.csv").exists()
     assert (tmp_path / "signals.meta.json").exists()
     meta = json.loads((tmp_path / "signals.meta.json").read_text(encoding="utf-8"))
-    assert meta["contract"] == "cstree.signals"
+    assert meta["contract"] == "alpha_research.signals"
     assert meta["rows"] == 2

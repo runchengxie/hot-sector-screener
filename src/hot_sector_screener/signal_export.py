@@ -8,7 +8,7 @@ from typing import Any
 import pandas as pd
 
 SIGNAL_SCHEMA_VERSION = 1
-SIGNAL_CONTRACT_NAME = "cstree.signals"
+SIGNAL_CONTRACT_NAME = "alpha_research.signals"
 SIGNAL_FILE_NAME = "signals.parquet"
 SIGNAL_META_FILE_NAME = "signals.meta.json"
 SIGNAL_CSV_FILE_NAME = "signals.csv"
@@ -48,7 +48,7 @@ def build_signal_frame(
     feature_set_id: str = "topic-concept-hotspot-overlay",
     eligible_for_live: bool = True,
 ) -> pd.DataFrame:
-    """Convert a candidate universe result into the canonical cstree signal schema."""
+    """Convert a candidate universe result into the canonical alpha-research schema."""
     candidates = list(result.get("candidate_universe") or [])
     if not candidates:
         return pd.DataFrame(columns=list(SIGNAL_COLUMNS))

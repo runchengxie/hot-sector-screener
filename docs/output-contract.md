@@ -114,7 +114,7 @@
 
 ## signals.parquet / signals.csv
 
-research-workspace 可消费的标准信号产物。核心字段兼容 `cstree.signals`：
+research-workspace 可消费的标准信号产物，契约名为 `alpha_research.signals`：
 
 | 字段 | 类型 | 说明 |
 |------|------|------|

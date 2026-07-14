@@ -72,10 +72,10 @@ def build_parser() -> argparse.ArgumentParser:
     bp.add_argument("--stock-limit", type=int, default=30, help="Max hot stocks in prompt")
     bp.add_argument("--concept-limit", type=int, default=20, help="Max concepts in prompt")
 
-    # export-signals — convert candidate universe into cstree signal artifact
+    # export-signals — convert candidate universe into a standard signal artifact
     es = sub.add_parser(
         "export-signals",
-        help="Export candidate universe as cstree-compatible signals.parquet",
+        help="Export candidate universe as alpha-research signals.parquet",
     )
     es.add_argument("--date", default=None, help="Output date to export")
     es.add_argument("--input", default=None, help="candidate_universe.json path")

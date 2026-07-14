@@ -29,7 +29,7 @@ quant-execution-engine
 - `signals.csv`
 - `signals.meta.json`
 
-`signals.parquet` 使用 `cstree.signals` 兼容字段：
+`signals.parquet` 使用 `alpha_research.signals` 契约字段：
 
 | 字段 | 说明 |
 |------|------|
