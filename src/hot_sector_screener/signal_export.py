@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 import pandas as pd
+
+from .candidate_contract import CandidateContractError, validate_candidate_result
+from .observation_time import date_key
 
 SIGNAL_SCHEMA_VERSION = 1
 SIGNAL_CONTRACT_NAME = "alpha_research.signals"
@@ -28,10 +30,7 @@ SIGNAL_COLUMNS = (
 
 
 def _date_int(result: dict[str, Any]) -> str:
-    raw = str(result.get("date_int") or result.get("date") or "").replace("-", "")
-    if len(raw) >= 8:
-        return raw[:8]
-    return datetime.now().strftime("%Y%m%d")
+    return date_key(result.get("observation_date"))
 
 
 def _as_float(value: Any, default: float = 0.0) -> float:
@@ -46,9 +45,9 @@ def build_signal_frame(
     *,
     model_version: str = "hotsector-theme-v2",
     feature_set_id: str = "topic-concept-hotspot-overlay",
-    eligible_for_live: bool = True,
 ) -> pd.DataFrame:
     """Convert a candidate universe result into the canonical alpha-research schema."""
+    result = validate_candidate_result(result)
     candidates = list(result.get("candidate_universe") or [])
     if not candidates:
         return pd.DataFrame(columns=list(SIGNAL_COLUMNS))
@@ -72,7 +71,7 @@ def build_signal_frame(
                 "model_version": model_version,
                 "feature_set_id": feature_set_id,
                 "eligible_for_backtest": True,
-                "eligible_for_live": bool(eligible_for_live),
+                "eligible_for_live": False,
                 "name": item.get("name", ""),
                 "source_topics": item.get("source_topics", []),
                 "source_concepts": item.get("source_concepts", []),
@@ -123,6 +122,9 @@ def signal_metadata(
     parquet_path: Path,
     csv_path: Path,
 ) -> dict[str, Any]:
+    result = validate_candidate_result(result)
+    provenance = result["provenance"]
+    evidence = result["evidence"]
     return {
         "contract": SIGNAL_CONTRACT_NAME,
         "schema_version": SIGNAL_SCHEMA_VERSION,
@@ -130,6 +132,14 @@ def signal_metadata(
         "csv_file": str(csv_path),
         "rows": len(frame),
         "signal_date": _date_int(result),
+        "data_cutoff": str(result.get("data_cutoff") or _date_int(result)),
+        "data_cutoff_semantics": "end_of_day",
+        "execution_not_before": "next_trading_session",
+        "future_data_included": result["future_data_included"],
+        "strict_point_in_time": evidence["strict_point_in_time"],
+        "evidence": evidence,
+        "artifact_role": "candidate_universe",
+        "execution_eligible": False,
         "required_columns": list(SIGNAL_COLUMNS),
         "score_columns": ["raw_pred", "signal_eval", "signal_backtest"],
         "rank_col": "rank",
@@ -141,6 +151,10 @@ def signal_metadata(
             "universe_size": result.get("universe_size"),
             "data_sources": result.get("data_sources", {}),
             "config_snapshot": result.get("config_snapshot", {}),
+            "candidate_schema_version": result["schema_version"],
+            "candidate_artifact_type": result["artifact_type"],
+            "candidate_provenance": provenance,
+            "candidate_evidence": evidence,
         },
     }
 
@@ -151,15 +165,14 @@ def write_signal_artifacts(
     *,
     model_version: str = "hotsector-theme-v2",
     feature_set_id: str = "topic-concept-hotspot-overlay",
-    eligible_for_live: bool = True,
 ) -> dict[str, str]:
+    result = validate_candidate_result(result)
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
     frame = build_signal_frame(
         result,
         model_version=model_version,
         feature_set_id=feature_set_id,
-        eligible_for_live=eligible_for_live,
     )
 
     parquet_path = output_path / SIGNAL_FILE_NAME
@@ -180,4 +193,8 @@ def write_signal_artifacts(
 
 def load_candidate_result(path: str | Path) -> dict[str, Any]:
     resolved = Path(path).expanduser()
-    return json.loads(resolved.read_text(encoding="utf-8"))
+    try:
+        payload = json.loads(resolved.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise CandidateContractError(f"invalid candidate JSON: {exc}") from exc
+    return validate_candidate_result(payload)

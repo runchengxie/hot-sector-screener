@@ -6,6 +6,8 @@ from typing import Any
 
 import pandas as pd
 
+from .candidate_contract import CandidateContractError, validate_candidate_result
+
 DEFAULT_REQUIRED_SOURCES = (
     # Level-1 candidate signals require concept constituents plus same-day
     # limit-up/hotspot event sources. ths_hot is useful when fresh, but it can
@@ -60,6 +62,10 @@ def validate_candidate_output(
         payload = json.loads(candidate_path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
         return [f"invalid candidate_universe.json: {exc}"]
+    try:
+        payload = validate_candidate_result(payload)
+    except CandidateContractError as exc:
+        return [str(exc)]
 
     data_sources = payload.get("data_sources")
     data_sources = data_sources if isinstance(data_sources, dict) else {}

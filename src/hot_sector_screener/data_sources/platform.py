@@ -295,7 +295,11 @@ def list_available_dates(source: str = "ths_hot") -> list[str]:
     return sorted(dates)
 
 
-def latest_common_date(sources: list[str] | tuple[str, ...]) -> str | None:
+def latest_common_date(
+    sources: list[str] | tuple[str, ...],
+    *,
+    not_after: str | None = None,
+) -> str | None:
     """Return the latest trade date available across all requested sources."""
     common_dates: set[str] | None = None
     for source in sources:
@@ -305,6 +309,10 @@ def latest_common_date(sources: list[str] | tuple[str, ...]) -> str | None:
         common_dates = dates if common_dates is None else common_dates & dates
         if not common_dates:
             return None
+    if not common_dates:
+        return None
+    if not_after is not None:
+        common_dates = {trade_date for trade_date in common_dates if trade_date <= not_after}
     if not common_dates:
         return None
     return sorted(common_dates)[-1]

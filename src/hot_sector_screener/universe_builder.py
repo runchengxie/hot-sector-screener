@@ -1,16 +1,20 @@
 from __future__ import annotations
 
 import json
-from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
 import pandas as pd
 
+from .candidate_contract import (
+    CANDIDATE_ARTIFACT_TYPE,
+    CANDIDATE_MARKET,
+    CANDIDATE_SCHEMA_VERSION,
+    validate_candidate_result,
+)
 from .confidence import apply_candidate_confidence
 from .daily_confirmation import apply_daily_confirmation_overlay, load_daily_history
 from .data_sources.platform import (
-    list_available_dates,
     load_daily_data,
     load_dc_concept,
     load_dc_concept_cons,
@@ -23,19 +27,16 @@ from .data_sources.platform import (
     load_ths_hot,
 )
 from .data_sources.rotation_signal import load_industry_signal
-from .outcome_evaluation import build_candidate_outcome_report
+from .observation_time import MARKET_TIMEZONE_NAME, resolve_observation_date, shanghai_now
 from .paths import ensure_output_dir
-from .quality_report import build_candidate_quality_report
 from .ranking import apply_hotspot_feature_overlay
 from .signal_export import write_signal_artifacts
 from .stock_mapper import StockMapper, apply_liquidity_filter
-from .topic_classifier import TopicClassifier, build_topic_prompt
-
-
-def _fmt_date(d: str | None) -> str:
-    if d:
-        return d.replace("-", "")
-    return date.today().isoformat().replace("-", "")
+from .topic_classifier import (
+    TopicClassifier,
+    build_topic_prompt,
+    validate_and_sanitize_topics,
+)
 
 
 def _df_to_dicts(df: pd.DataFrame) -> list[dict[str, Any]]:
@@ -109,29 +110,77 @@ def _limit_cpt_topic_records(limit_cpt: pd.DataFrame) -> list[dict[str, Any]]:
     return records
 
 
-def _future_daily_frames(
-    date_int: str,
-    horizons: tuple[int, ...] = (1, 3, 5),
-) -> dict[int, pd.DataFrame]:
-    try:
-        dates = list_available_dates("daily")
-    except RuntimeError:
-        return {}
-    future_dates = [d for d in dates if d > date_int]
-    frames: dict[int, pd.DataFrame] = {}
-    for horizon in horizons:
-        if len(future_dates) >= horizon:
-            frames[horizon] = _load_optional_daily(future_dates[horizon - 1])
-    return frames
+def _industry_signal_date(frame: pd.DataFrame) -> str | None:
+    if frame.empty:
+        return None
+    from_attrs = frame.attrs.get("signal_date")
+    if from_attrs:
+        return str(from_attrs).replace("-", "")[:8]
+    if "signal_date" not in frame.columns:
+        return None
+    dates = frame["signal_date"].dropna().astype(str).str.replace("-", "", regex=False)
+    return max((value[:8] for value in dates if len(value) >= 8), default=None)
 
 
-def _future_daily_sequence(date_int: str, max_horizon: int = 5) -> list[pd.DataFrame]:
-    try:
-        dates = list_available_dates("daily")
-    except RuntimeError:
-        return []
-    future_dates = [d for d in dates if d > date_int]
-    return [_load_optional_daily(day) for day in future_dates[:max_horizon]]
+def _rotation_provenance(frame: pd.DataFrame, as_of_date: str) -> dict[str, Any]:
+    return {
+        "as_of_date": as_of_date,
+        "signal_date": _industry_signal_date(frame),
+        "provenance_level": str(frame.attrs.get("provenance_level") or "unavailable"),
+        "strict_point_in_time": False,
+        "publisher_receipt_verified": False,
+        "source_path": frame.attrs.get("source_path"),
+        "limitation": "publisher receipt with published_at/data_cutoff/hash is unavailable",
+    }
+
+
+def _deferred_evaluation_report() -> dict[str, Any]:
+    return {
+        "available": False,
+        "reason": "future_data_excluded_from_generation",
+        "horizons": {},
+    }
+
+
+def _contract_evidence(date_int: str, ind_signal: pd.DataFrame) -> dict[str, Any]:
+    generated_at = shanghai_now()
+    same_day_generation = generated_at.strftime("%Y%m%d") == date_int
+    temporal_context = (
+        "same_day_eod_generation" if same_day_generation else "post_observation_generation"
+    )
+    limitations = [
+        "rotation_publisher_receipt_unavailable",
+        "candidate_artifact_does_not_establish_out_of_sample_validity",
+    ]
+    if not same_day_generation:
+        limitations.append("post_observation_reconstruction_not_oos")
+    return {
+        "generated_at": generated_at.isoformat(),
+        "provenance": {
+            "timezone": MARKET_TIMEZONE_NAME,
+            "observation_date": date_int,
+            "data_cutoff": date_int,
+            "future_data_included": False,
+            "artifact_role": "candidate_universe",
+            "strict_point_in_time": False,
+            "rotation": _rotation_provenance(ind_signal, date_int),
+        },
+        "evidence": {
+            "strict_point_in_time": False,
+            "out_of_sample_claim": False,
+            "temporal_context": temporal_context,
+            "limitations": limitations,
+        },
+    }
+
+
+def _data_source_status(frames: dict[str, pd.DataFrame]) -> dict[str, Any]:
+    status: dict[str, Any] = {
+        f"{source}_available": not frame.empty for source, frame in frames.items()
+    }
+    industry_signal = frames["industry_signal"]
+    status["industry_signal_date"] = _industry_signal_date(industry_signal)
+    return status
 
 
 class Screener:
@@ -155,15 +204,34 @@ class Screener:
         self.daily_confirmation_lookback = int(uc.get("daily_confirmation_lookback", 20))
         self.min_daily_confirmation_score = uc.get("min_daily_confirmation_score")
         self.confidence_enabled = bool(uc.get("confidence_enabled", True))
+        self.rotation_signal_dir = self.config.get("rotation_signal_dir")
 
         self.classifier = TopicClassifier(enabled=self.config.get("llm", {}).get("enabled", True))
+
+    def _config_snapshot(self) -> dict[str, Any]:
+        return {
+            "max_candidates": self.max_candidates,
+            "min_candidates": self.min_candidates,
+            "llm_enabled": self.classifier.enabled,
+            "min_daily_amount_rank_pct": self.min_daily_amount_rank_pct,
+            "max_price": self.max_price,
+            "min_price": self.min_price,
+            "max_st_allow": self.max_st_allow,
+            "hotspot_feature_overlay": self.hotspot_feature_overlay,
+            "hotspot_feature_weight": self.hotspot_feature_weight,
+            "daily_confirmation_enabled": self.daily_confirmation_enabled,
+            "daily_confirmation_weight": self.daily_confirmation_weight,
+            "daily_confirmation_lookback": self.daily_confirmation_lookback,
+            "min_daily_confirmation_score": self.min_daily_confirmation_score,
+            "confidence_enabled": self.confidence_enabled,
+        }
 
     def scan(self, trade_date: str | None = None) -> dict[str, Any]:
         """Collect hotspot data without LLM classification.
 
         Returns raw data overview.
         """
-        date_int = _fmt_date(trade_date)
+        date_int = resolve_observation_date(trade_date)
         date_str = f"{date_int[:4]}-{date_int[4:6]}-{date_int[6:]}"
 
         ths = load_ths_hot(date_str)
@@ -175,7 +243,10 @@ class Screener:
         limit_cpt = load_limit_cpt_list(date_str)
         limit_list_ths = load_limit_list_ths(date_str)
         hf = load_hotspot_features(date_str)
-        ind_signal = load_industry_signal()
+        ind_signal = load_industry_signal(
+            as_of_date=date_int,
+            run_dir=self.rotation_signal_dir,
+        )
         daily = _load_optional_daily(date_str)
         daily_history = load_daily_history(
             date_int,
@@ -246,12 +317,15 @@ class Screener:
 
         Returns dict with prompt text and data summary.
         """
-        date_int = _fmt_date(trade_date)
+        date_int = resolve_observation_date(trade_date)
         date_str = f"{date_int[:4]}-{date_int[4:6]}-{date_int[6:]}"
 
         ths = load_ths_hot(date_str, limit=stock_limit)
         dc = load_dc_concept(date_str)
-        ind_signal = load_industry_signal()
+        ind_signal = load_industry_signal(
+            as_of_date=date_int,
+            run_dir=self.rotation_signal_dir,
+        )
 
         ths_stocks = _df_to_dicts(ths)
         dc_list = _df_to_dicts(dc)
@@ -278,13 +352,13 @@ class Screener:
         self,
         trade_date: str | None = None,
         output_dir: str | None = None,
-        topics: list[dict[str, Any]] | None = None,
+        topics: object | None = None,
     ) -> dict[str, Any]:
         """Run the full pipeline: collect → classify → map → output.
 
         If `topics` is provided, skips the LLM classification step entirely.
         """
-        date_int = _fmt_date(trade_date)
+        date_int = resolve_observation_date(trade_date)
         date_str = f"{date_int[:4]}-{date_int[4:6]}-{date_int[6:]}"
 
         # 1. Collect data
@@ -297,7 +371,10 @@ class Screener:
         limit_cpt = load_limit_cpt_list(date_str)
         limit_list_ths = load_limit_list_ths(date_str)
         hf = load_hotspot_features(date_str)
-        ind_signal = load_industry_signal()
+        ind_signal = load_industry_signal(
+            as_of_date=date_int,
+            run_dir=self.rotation_signal_dir,
+        )
         daily = _load_optional_daily(date_str)
         daily_history = (
             load_daily_history(
@@ -315,8 +392,12 @@ class Screener:
         ind_list = _df_to_dicts(ind_signal) if not ind_signal.empty else None
 
         if topics is not None:
-            # Use pre-classified topics loaded from file
-            pass  # topics already set
+            topics = validate_and_sanitize_topics(
+                topics,
+                ths_hot_stocks=ths_stocks,
+                dc_concepts=classifier_concepts,
+                industry_signals=ind_list,
+            )
         else:
             topics = self.classifier.classify(
                 ths_hot_stocks=ths_stocks,
@@ -370,65 +451,46 @@ class Screener:
         )
         if self.confidence_enabled:
             filtered = apply_candidate_confidence(filtered)
-        future_daily_sequence = _future_daily_sequence(date_int)
-        future_daily_frames = {
-            horizon: future_daily_sequence[horizon - 1]
-            for horizon in (1, 3, 5)
-            if len(future_daily_sequence) >= horizon
-        }
-        quality_report = build_candidate_quality_report(
-            filtered,
-            daily,
-            future_daily_frames,
-        )
-        outcome_report = build_candidate_outcome_report(
-            filtered,
-            daily,
-            future_daily_sequence,
-            horizons=(1, 3),
-        )
+        quality_report = _deferred_evaluation_report()
+        outcome_report = _deferred_evaluation_report()
 
         # 5. Build output
         result = {
+            "schema_version": CANDIDATE_SCHEMA_VERSION,
+            "artifact_type": CANDIDATE_ARTIFACT_TYPE,
+            "market": CANDIDATE_MARKET,
             "date": date_str,
             "date_int": date_int,
-            "generated_at": datetime.now().isoformat(),
+            "observation_date": date_int,
+            "data_cutoff": date_int,
+            "data_cutoff_semantics": "end_of_day",
+            "execution_not_before": "next_trading_session",
+            "future_data_included": False,
+            **_contract_evidence(date_int, ind_signal),
             "topics": topics,
             "candidate_universe": filtered,
             "universe_size": len(filtered),
-            "config_snapshot": {
-                "max_candidates": self.max_candidates,
-                "min_candidates": self.min_candidates,
-                "llm_enabled": self.classifier.enabled,
-                "min_daily_amount_rank_pct": self.min_daily_amount_rank_pct,
-                "max_price": self.max_price,
-                "min_price": self.min_price,
-                "max_st_allow": self.max_st_allow,
-                "hotspot_feature_overlay": self.hotspot_feature_overlay,
-                "hotspot_feature_weight": self.hotspot_feature_weight,
-                "daily_confirmation_enabled": self.daily_confirmation_enabled,
-                "daily_confirmation_weight": self.daily_confirmation_weight,
-                "daily_confirmation_lookback": self.daily_confirmation_lookback,
-                "min_daily_confirmation_score": self.min_daily_confirmation_score,
-                "confidence_enabled": self.confidence_enabled,
-            },
-            "data_sources": {
-                "ths_hot_available": len(ths) > 0,
-                "dc_concept_available": len(dc) > 0,
-                "dc_concept_cons_available": len(dc_cons) > 0,
-                "kpl_concept_cons_available": len(kpl_cons) > 0,
-                "kpl_list_available": len(kpl_list) > 0,
-                "limit_step_available": len(limit_step) > 0,
-                "limit_cpt_list_available": len(limit_cpt) > 0,
-                "limit_list_ths_available": len(limit_list_ths) > 0,
-                "hotspot_features_available": len(hf) > 0,
-                "daily_available": len(daily) > 0,
-                "daily_history_available": len(daily_history) > 0,
-                "industry_signal_available": len(ind_signal) > 0,
-            },
+            "config_snapshot": self._config_snapshot(),
+            "data_sources": _data_source_status(
+                {
+                    "ths_hot": ths,
+                    "dc_concept": dc,
+                    "dc_concept_cons": dc_cons,
+                    "kpl_concept_cons": kpl_cons,
+                    "kpl_list": kpl_list,
+                    "limit_step": limit_step,
+                    "limit_cpt_list": limit_cpt,
+                    "limit_list_ths": limit_list_ths,
+                    "hotspot_features": hf,
+                    "daily": daily,
+                    "daily_history": daily_history,
+                    "industry_signal": ind_signal,
+                }
+            ),
             "quality_report": quality_report,
             "outcome_report": outcome_report,
         }
+        result = validate_candidate_result(result)
 
         # 6. Write output
         out_dir = Path(output_dir) if output_dir else ensure_output_dir(date_int)
@@ -475,13 +537,22 @@ class Screener:
                 feature_set_id=str(
                     output_cfg.get("signal_feature_set_id", "topic-concept-hotspot-overlay")
                 ),
-                eligible_for_live=bool(output_cfg.get("eligible_for_live", True)),
             )
 
         # Lineage
         lineage = {
+            "schema_version": result["schema_version"],
+            "artifact_type": result["artifact_type"],
+            "market": result["market"],
             "date": date_str,
+            "observation_date": date_int,
+            "data_cutoff": date_int,
+            "data_cutoff_semantics": "end_of_day",
+            "execution_not_before": "next_trading_session",
+            "future_data_included": False,
             "generated_at": result["generated_at"],
+            "provenance": result["provenance"],
+            "evidence": result["evidence"],
             "run_config": config_path.name,
             "data_sources": dict(result["data_sources"]),
             "topics_count": len(topics),

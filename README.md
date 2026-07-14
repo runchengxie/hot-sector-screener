@@ -1,6 +1,8 @@
 # hot-sector-screener
 
-A 股热点题材候选池筛选器。每天开盘前，根据同花顺热榜、东财概念板块、开盘啦概念成分、ETF 轮动信号等多来源数据，自动生成 50-100 只股票的盯盘候选池。这个池子交给后续的选股流程进一步筛选使用。
+A 股热点题材候选池筛选器。使用最近一个已完整收盘交易日的同花顺热榜、东财概念板块、开盘啦概念成分、ETF 轮动信号等多来源数据，生成 50-100 只股票的下一交易时段盯盘候选池。这个池子交给后续的选股流程进一步筛选使用。
+
+职责边界：LLM 只压缩信息并输出主题分类；`topic → stock` 候选池由确定性规则生成。本仓库不提供 LLM 直接选股、AI 精选文案或对应推送入口，这些能力由下游 `ai-stock-picker` 负责。
 
 ## 快速开始
 
@@ -30,6 +32,8 @@ uv run hotsector info
 uv run hotsector run --date 2026-06-19
 ```
 
+这里的 `2026-06-19` 是观测日/数据截止日（EOD），不是执行日。候选池最早只能供下一交易时段使用；历史运行的 rotation 信号也会严格限制为 `signal_date <= observation_date`。
+
 查看某天的候选池结果：
 
 ```bash
@@ -45,9 +49,9 @@ uv run hotsector universe --date 2026-06-19
 
 - `candidate_universe.csv` — 候选股票表格，可用 Excel 打开
 - `candidate_universe.json` — 完整结果（含主题空间、数据源状态等）
-- `candidate_quality.json` — T+1/T+3/T+5 候选池表现回看（后续行情可用时）
+- `candidate_quality.json` / `candidate_outcomes.json` — 生成阶段只写 deferred stub，不读取任何未来行情；事后评价由独立研究 owner/流程执行
 - `signals.parquet` / `signals.csv` — research-workspace 可消费的标准信号产物
-- `signals.meta.json` — 信号契约和来源元数据
+- `signals.meta.json` — 信号契约、数据截止日和候选池角色元数据；产物固定 `eligible_for_live=false`
 - `lineage.json` — 数据溯源记录
 - `run_config.json` — 本次运行的配置快照
 
@@ -77,5 +81,5 @@ hot-sector-screener/
 - [命令详解](docs/commands.md) — 全部 5 个子命令和参数说明
 - [配置项参考](docs/configuration.md) — 配置文件各字段含义
 - [输出格式说明](docs/output-contract.md) — 输出文件的 JSON 结构和字段
-- [回测脚本](docs/backtests.md) — 两个独立的回测脚本说明
+- [回测说明](docs/backtests.md) — 与 LLM 直选无关的确定性热点策略研究入口
 - [Research Workspace 交接](docs/research-workspace-handoff.md) — 标准信号产物和跨项目调度

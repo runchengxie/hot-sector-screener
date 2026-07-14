@@ -1,0 +1,89 @@
+{
+  "schema_version": "1.0.0",
+  "artifact_type": "hot_sector_candidate_universe",
+  "market": "CN",
+  "date": "2026-06-29",
+  "date_int": "20260629",
+  "observation_date": "20260629",
+  "data_cutoff": "20260629",
+  "data_cutoff_semantics": "end_of_day",
+  "execution_not_before": "next_trading_session",
+  "future_data_included": false,
+  "generated_at": "2026-06-30T13:48:57+08:00",
+  "provenance": {
+    "timezone": "Asia/Shanghai",
+    "observation_date": "20260629",
+    "data_cutoff": "20260629",
+    "future_data_included": false,
+    "artifact_role": "candidate_universe",
+    "strict_point_in_time": false,
+    "rotation": {
+      "as_of_date": "20260629",
+      "signal_date": null,
+      "provenance_level": "unavailable",
+      "strict_point_in_time": false,
+      "publisher_receipt_verified": false,
+      "source_path": null,
+      "limitation": "publisher receipt with published_at/data_cutoff/hash is unavailable"
+    }
+  },
+  "evidence": {
+    "strict_point_in_time": false,
+    "out_of_sample_claim": false,
+    "temporal_context": "post_observation_generation",
+    "limitations": [
+      "rotation_publisher_receipt_unavailable",
+      "candidate_artifact_does_not_establish_out_of_sample_validity",
+      "post_observation_reconstruction_not_oos"
+    ]
+  },
+  "topics": [
+    {
+      "topic": "半导体国产替代",
+      "weight": 0.8,
+      "reasoning": "观测日概念数据中的确定性主题分类示例",
+      "related_concepts": [
+        "半导体设备"
+      ],
+      "source_signals": [
+        "dc_concept"
+      ]
+    }
+  ],
+  "candidate_universe": [
+    {
+      "ts_code": "002371.SZ",
+      "name": "北方华创",
+      "score": 1.25,
+      "relevance": 0.92,
+      "source_topics": [
+        "半导体国产替代"
+      ],
+      "source_concepts": [
+        "半导体设备"
+      ]
+    }
+  ],
+  "universe_size": 1,
+  "config_snapshot": {
+    "min_candidates": 1,
+    "max_candidates": 100,
+    "llm_enabled": false
+  },
+  "data_sources": {
+    "dc_concept_available": true,
+    "dc_concept_cons_available": true,
+    "industry_signal_available": false,
+    "industry_signal_date": null
+  },
+  "quality_report": {
+    "available": false,
+    "reason": "future_data_excluded_from_generation",
+    "horizons": {}
+  },
+  "outcome_report": {
+    "available": false,
+    "reason": "future_data_excluded_from_generation",
+    "horizons": {}
+  }
+}

@@ -38,6 +38,7 @@ class TestDefaultConfig:
         assert uni["hotspot_feature_overlay"] is True
         assert uni["hotspot_feature_weight"] == 0.25
         assert cfg["output"]["export_signals"] is True
+        assert cfg["output"]["eligible_for_live"] is False
 
 
 class TestLoadConfig:
@@ -48,6 +49,8 @@ hotspot_sources:
   - ths_hot
 universe:
   max_candidates: 50
+output:
+  eligible_for_live: true
 """
         config_path = tmp_path / "test_config.yml"
         config_path.write_text(yaml_content)
@@ -61,6 +64,7 @@ universe:
         assert cfg["universe"]["min_price"] == 2.0
         assert cfg["universe"]["hotspot_feature_overlay"] is True
         assert cfg["output"]["export_signals"] is True
+        assert cfg["output"]["eligible_for_live"] is False
 
     def test_load_empty_yaml(self, tmp_path):
         config_path = tmp_path / "empty.yml"

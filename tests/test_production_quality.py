@@ -10,18 +10,23 @@ from hot_sector_screener.production_quality import (
     parse_source_list,
     validate_candidate_output,
 )
+from tests.candidate_factory import valid_candidate_payload
 
 
 def _write_candidate_payload(path, *, size: int, source_value: bool = True) -> None:
     data_sources = {f"{source}_available": source_value for source in DEFAULT_REQUIRED_SOURCES}
-    payload = {
-        "date": "2026-06-29",
-        "date_int": "20260629",
-        "candidate_universe": [{"ts_code": f"00000{i}.SZ", "relevance": 1.0} for i in range(size)],
-        "universe_size": size,
-        "config_snapshot": {"min_candidates": 2},
-        "data_sources": data_sources,
-    }
+    candidates = [
+        {
+            "ts_code": f"00000{i}.SZ",
+            "name": f"候选{i}",
+            "score": 1.0,
+            "relevance": 1.0,
+            "source_topics": [],
+            "source_concepts": [],
+        }
+        for i in range(size)
+    ]
+    payload = valid_candidate_payload(candidates=candidates, data_sources=data_sources)
     (path / "candidate_universe.json").write_text(
         json.dumps(payload, ensure_ascii=False),
         encoding="utf-8",

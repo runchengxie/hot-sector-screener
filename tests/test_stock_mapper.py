@@ -86,13 +86,15 @@ class TestStockMapper:
             [
                 {
                     "ts_code": "000025.KP",
-                    "con_name": "AI算力",
+                    "name": "AI算力",
+                    "con_name": "浪潮信息",
                     "con_code": "000977.SZ",
                     "desc": "服务器算力",
                 },
                 {
                     "ts_code": "000025.KP",
-                    "con_name": "AI算力",
+                    "name": "AI算力",
+                    "con_name": "中科曙光",
                     "con_code": "603019.SH",
                     "desc": "服务器算力",
                 },
@@ -108,13 +110,15 @@ class TestStockMapper:
         codes = {s["ts_code"] for s in stocks}
         assert codes == {"000977.SZ", "603019.SH"}
         assert "000025.KP" not in codes
+        assert {s["name"] for s in stocks} == {"浪潮信息", "中科曙光"}
 
-    def test_kpl_description_fallback_uses_constituent_stock_code(self):
+    def test_free_form_topic_cannot_select_stock_through_kpl_description(self):
         kpl_cons = pd.DataFrame(
             [
                 {
                     "ts_code": "000025.KP",
-                    "con_name": "算力租赁",
+                    "name": "算力租赁",
+                    "con_name": "浪潮信息",
                     "con_code": "000977.SZ",
                     "desc": "AI服务器供应商",
                 },
@@ -127,7 +131,24 @@ class TestStockMapper:
             max_stocks=10,
         )
 
-        assert [s["ts_code"] for s in stocks] == ["000977.SZ"]
+        assert stocks == []
+
+    def test_company_name_disguised_as_related_concept_cannot_select_stock(
+        self,
+        sample_dc_cons,
+    ):
+        mapper = StockMapper(sample_dc_cons)
+
+        stocks = mapper.map_topic_to_stocks(
+            {
+                "topic": "AI 精选",
+                "weight": 1.0,
+                "related_concepts": ["中际旭创"],
+            },
+            max_stocks=10,
+        )
+
+        assert stocks == []
 
     def test_hot_event_theme_maps_to_topic(self):
         hot_stocks = pd.DataFrame(

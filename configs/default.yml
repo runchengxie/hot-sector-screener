@@ -41,7 +41,7 @@ output:
   export_signals: true
   signal_model_version: hotsector-theme-v2
   signal_feature_set_id: topic-concept-hotspot-overlay
-  eligible_for_live: true
+  eligible_for_live: false
 
 # Optional: path to rotation-v3 industry-signal output
-# rotation_signal_dir: /home/richard/data/market-data-platform/strategy_outputs/etf_rotation_v3/latest
+# rotation_signal_dir: /home/richard/data/market-data-platform/strategy_outputs/etf_rotation_v3/run-20260619
