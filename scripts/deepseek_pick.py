@@ -83,8 +83,10 @@ def build_stock_pick_prompt(
         "",
         "### 候选股票明细",
         "",
-        "| ts_code | 名称 | 得分 | 关联主题 | 关联概念 | 日内确认 | 趋势 | 量能 | 风险 | 流动性 | 置信度 |",  # noqa: E501
-        "|---------|------|------|----------|----------|----------|------|------|------|--------|--------|",
+        "| ts_code | 名称 | 得分 | 关联主题 | 关联概念 "
+        "| 日内确认 | 趋势 | 量能 | 风险 | 流动性 | 置信度 |",
+        "|---------|------|------|----------|----------"
+        "|----------|------|------|------|--------|--------|",
     ]
 
     for _, row in candidates.iterrows():
@@ -114,7 +116,9 @@ def build_stock_pick_prompt(
             f"从以上候选池中选出恰好 {top_n} 只股票。按以下优先级排序：",
             "",
             "### 一级：量价共振（权重最高）",
-            "- **量能分 ≈ 1.0** 且 **日内确认分 > 0.6**：说明有真金白银在买，且盘中走势验证了题材逻辑。这种量价配合是短线最可靠的信号。",  # noqa: E501
+            "- **量能分 ≈ 1.0** 且 **日内确认分 > 0.6**："
+            "说明有真金白银在买，且盘中走势验证了题材逻辑。"
+            "这种量价配合是短线最可靠的信号。",
             "- 量能分高但日内确认分低：可能是尾盘偷袭或对倒，谨慎。",
             "",
             "### 二级：主题强度与板块效应",
@@ -123,7 +127,8 @@ def build_stock_pick_prompt(
             "- 板块内涨停家数多的主题优先（dc_concept 里的强度/涨停数）",
             "",
             "### 三级：风险过滤",
-            "- **风险分 < 0.3** 的股票大概率是连板投机票或问题股，除非量能+趋势+日内确认三项都接近满分，否则回避",  # noqa: E501
+            "- **风险分 < 0.3** 的股票大概率是连板投机票或问题股，"
+            "除非量能+趋势+日内确认三项都接近满分，否则回避",
             "- 流动性分 < 0.5（成交额分位 < 50%）的股票流动性太差，回避",
             "- 已经连续涨停 3 板以上的要注意开板风险",
             "",
@@ -145,7 +150,9 @@ def build_stock_pick_prompt(
             '  - "risk_note": 一句话风险提示（选填，可为空字符串）',
             "",
             "示例:",
-            '[{"ts_code": "000001.SZ", "name": "平安银行", "confidence_score": 8, "reasoning": "...", "primary_topic": "金融科技", "risk_note": ""}]',  # noqa: E501
+            '[{"ts_code": "000001.SZ", "name": "平安银行", '
+            '"confidence_score": 8, "reasoning": "...", '
+            '"primary_topic": "金融科技", "risk_note": ""}]',
         ]
     )
 
@@ -330,7 +337,7 @@ def find_latest_date() -> str | None:
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
-def main() -> None:
+def _build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="DeepSeek stock picking from hot-sector candidate universe"
     )
@@ -354,6 +361,24 @@ def main() -> None:
         action="store_true",
         help="Build prompt and print it, but do not call API",
     )
+    return parser
+
+
+def _print_pick_summary(picks: list[dict[str, Any]], top_n: int) -> None:
+    print(f"\nTop {top_n} picks:")
+    for i, p in enumerate(picks, 1):
+        ts = p.get("ts_code", "?")
+        name = p.get("name", "?")
+        conf = p.get("confidence_score", "?")
+        topic = p.get("primary_topic", "?")
+        reasoning = (p.get("reasoning", "") or "")[:80]
+        print(f"  {i:2d}. {ts} {name} [信心:{conf}] {topic}")
+        if reasoning:
+            print(f"      {reasoning}")
+
+
+def main() -> None:
+    parser = _build_arg_parser()
     args = parser.parse_args()
 
     # Resolve date
@@ -420,17 +445,7 @@ def main() -> None:
         json.dump(result, f, ensure_ascii=False, indent=2)
     print(f"Saved {len(picks)} picks to {out_path}")
 
-    # Print summary
-    print(f"\nTop {args.top_n} picks:")
-    for i, p in enumerate(picks, 1):
-        ts = p.get("ts_code", "?")
-        name = p.get("name", "?")
-        conf = p.get("confidence_score", "?")
-        topic = p.get("primary_topic", "?")
-        reasoning = (p.get("reasoning", "") or "")[:80]
-        print(f"  {i:2d}. {ts} {name} [信心:{conf}] {topic}")
-        if reasoning:
-            print(f"      {reasoning}")
+    _print_pick_summary(picks, args.top_n)
 
 
 if __name__ == "__main__":
