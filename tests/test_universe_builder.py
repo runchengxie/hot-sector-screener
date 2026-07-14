@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from unittest.mock import patch
 
 import pandas as pd
 import pytest
 
+from hot_sector_screener import universe_builder
+from hot_sector_screener.candidate_contract import validate_candidate_result
+from hot_sector_screener.topic_classifier import TopicValidationError
 from hot_sector_screener.universe_builder import Screener
 
 
@@ -18,7 +22,7 @@ def sample_topics():
             "weight": 0.32,
             "reasoning": "测试主题",
             "related_concepts": ["AI医疗"],
-            "source_signals": ["ths_hot"],
+            "source_signals": ["dc_concept"],
         },
         {
             "topic": "半导体",
@@ -49,6 +53,71 @@ def sample_dc_cons():
             },
         ]
     )
+
+
+def _install_contract_path_loaders(monkeypatch) -> None:
+    frames = {
+        "load_ths_hot": pd.DataFrame(
+            [
+                {
+                    "ts_code": "000977.SZ",
+                    "ts_name": "浪潮信息",
+                    "concept": '["AI算力"]',
+                }
+            ]
+        ),
+        "load_dc_concept": pd.DataFrame(
+            [
+                {"name": "CPO概念", "theme_code": "CPO"},
+                {"name": "AI算力", "theme_code": "AI_COMPUTE"},
+            ]
+        ),
+        "load_dc_concept_cons": pd.DataFrame(
+            [
+                {
+                    "ts_code": "300308.SZ",
+                    "name": "中际旭创",
+                    "theme_code": "CPO",
+                }
+            ]
+        ),
+        "load_kpl_concept_cons": pd.DataFrame(
+            [
+                {
+                    "ts_code": "000025.KP",
+                    "name": "AI算力",
+                    "con_name": "浪潮信息",
+                    "con_code": "000977.SZ",
+                }
+            ]
+        ),
+        "load_kpl_list": pd.DataFrame(
+            [
+                {
+                    "ts_code": "600990.SH",
+                    "name": "四创电子",
+                    "theme": "商业航天",
+                    "tag": "涨停",
+                }
+            ]
+        ),
+    }
+    empty_loaders = (
+        "load_limit_step",
+        "load_limit_cpt_list",
+        "load_limit_list_ths",
+        "load_hotspot_features",
+        "load_industry_signal",
+        "load_daily_data",
+        "load_daily_history",
+    )
+    frames.update({name: pd.DataFrame() for name in empty_loaders})
+    for loader_name, frame in frames.items():
+        monkeypatch.setattr(
+            universe_builder,
+            loader_name,
+            lambda *args, _frame=frame, **kwargs: _frame.copy(),
+        )
 
 
 class TestScreenerInit:
@@ -120,7 +189,12 @@ class TestScreenerBuildUniverse:
             patch("hot_sector_screener.universe_builder.write_signal_artifacts") as mock_signals,
         ):
             mock_ths.return_value = pd.DataFrame()
-            mock_dc.return_value = pd.DataFrame()
+            mock_dc.return_value = pd.DataFrame(
+                [
+                    {"name": "AI医疗", "theme_code": "AI_HEALTH"},
+                    {"name": "半导体", "theme_code": "SEMICONDUCTOR"},
+                ]
+            )
             mock_dc_cons.return_value = sample_dc_cons
             mock_kpl.return_value = pd.DataFrame()
             mock_hf.return_value = pd.DataFrame()
@@ -141,13 +215,18 @@ class TestScreenerBuildUniverse:
             assert "data_sources" in result
             assert result["data_sources"]["dc_concept_cons_available"] is True
             assert result["data_sources"]["hotspot_features_available"] is False
+            assert result["data_cutoff"] == "20260619"
+            generated_at = datetime.fromisoformat(result["generated_at"])
+            assert generated_at.utcoffset() is not None
+            mock_ind.assert_called_once_with(as_of_date="20260619", run_dir=None)
 
     def test_empty_data_returns_empty_universe(self):
         """When all data sources return empty, universe should still produce a valid result."""
         with (
             patch("hot_sector_screener.universe_builder.load_ths_hot", return_value=pd.DataFrame()),
             patch(
-                "hot_sector_screener.universe_builder.load_dc_concept", return_value=pd.DataFrame()
+                "hot_sector_screener.universe_builder.load_dc_concept",
+                return_value=pd.DataFrame(),
             ),
             patch(
                 "hot_sector_screener.universe_builder.load_dc_concept_cons",
@@ -202,7 +281,13 @@ class TestScreenerBuildUniverse:
         with (
             patch("hot_sector_screener.universe_builder.load_ths_hot", return_value=pd.DataFrame()),
             patch(
-                "hot_sector_screener.universe_builder.load_dc_concept", return_value=pd.DataFrame()
+                "hot_sector_screener.universe_builder.load_dc_concept",
+                return_value=pd.DataFrame(
+                    [
+                        {"name": "AI医疗", "theme_code": "AI_HEALTH"},
+                        {"name": "半导体", "theme_code": "SEMICONDUCTOR"},
+                    ]
+                ),
             ),
             patch(
                 "hot_sector_screener.universe_builder.load_dc_concept_cons",
@@ -254,10 +339,10 @@ class TestScreenerBuildUniverse:
                         }
                     ]
                 ),
-            ),
+            ) as mock_daily,
             patch(
-                "hot_sector_screener.universe_builder.list_available_dates",
-                return_value=["20260619", "20260620"],
+                "hot_sector_screener.universe_builder.load_daily_history",
+                return_value=pd.DataFrame(),
             ),
         ):
             screener = Screener()
@@ -275,7 +360,90 @@ class TestScreenerBuildUniverse:
             assert (tmp_path / "candidate_outcomes.json").exists()
             assert "quality_report" in result
             assert "outcome_report" in result
+            assert result["quality_report"] == {
+                "available": False,
+                "reason": "future_data_excluded_from_generation",
+                "horizons": {},
+            }
+            assert result["outcome_report"] == result["quality_report"]
             assert result["output_dir"] == str(tmp_path)
+            mock_daily.assert_called_once_with("2026-06-19")
+
+    def test_real_mapper_paths_produce_contract_valid_rows(self, monkeypatch, tmp_path):
+        _install_contract_path_loaders(monkeypatch)
+        topics = [
+            {
+                "topic": "光通信",
+                "weight": 0.8,
+                "reasoning": "观测数据主题",
+                "related_concepts": ["CPO概念"],
+                "source_signals": ["dc_concept"],
+            },
+            {
+                "topic": "AI算力",
+                "weight": 0.7,
+                "reasoning": "观测数据主题",
+                "related_concepts": ["AI算力"],
+                "source_signals": ["dc_concept"],
+            },
+        ]
+        screener = Screener(
+            {
+                "llm": {"enabled": False},
+                "output": {"export_signals": False},
+                "universe": {"daily_confirmation_enabled": False},
+            }
+        )
+
+        result = screener.build_universe(
+            trade_date="2026-06-19",
+            output_dir=str(tmp_path),
+            topics=topics,
+        )
+
+        validate_candidate_result(result)
+        rows = {row["ts_code"]: row for row in result["candidate_universe"]}
+        assert set(rows) == {"300308.SZ", "000977.SZ", "600990.SH"}
+        assert rows["300308.SZ"]["name"] == "中际旭创"
+        assert rows["000977.SZ"]["name"] == "浪潮信息"
+        assert rows["600990.SH"]["name"] == "四创电子"
+        assert all(row["source_topics"] for row in rows.values())
+        assert all(isinstance(row["source_concepts"], list) for row in rows.values())
+
+    def test_external_topics_use_strict_public_validator(self, monkeypatch):
+        for loader_name in (
+            "load_ths_hot",
+            "load_dc_concept",
+            "load_dc_concept_cons",
+            "load_kpl_concept_cons",
+            "load_kpl_list",
+            "load_limit_step",
+            "load_limit_cpt_list",
+            "load_limit_list_ths",
+            "load_hotspot_features",
+            "load_industry_signal",
+            "load_daily_data",
+            "load_daily_history",
+        ):
+            monkeypatch.setattr(
+                universe_builder, loader_name, lambda *args, **kwargs: pd.DataFrame()
+            )
+
+        malicious_topics = [
+            {
+                "topic": "AI精选",
+                "weight": 1.0,
+                "reasoning": "直接选股",
+                "related_concepts": ["300308.SZ"],
+                "source_signals": ["model_pick"],
+            }
+        ]
+
+        with pytest.raises(TopicValidationError):
+            Screener().build_universe(
+                trade_date="2026-06-19",
+                topics=malicious_topics,
+            )
 
 
 class TestScreenerScan:
@@ -317,7 +485,7 @@ class TestScreenerScan:
             patch(
                 "hot_sector_screener.universe_builder.load_industry_signal",
                 return_value=pd.DataFrame(),
-            ),
+            ) as mock_ind,
             patch(
                 "hot_sector_screener.universe_builder.load_daily_history",
                 return_value=pd.DataFrame(),
@@ -335,6 +503,7 @@ class TestScreenerScan:
             assert "daily_history" in result
             assert "industry_signal" in result
             assert result["ths_hot"]["rows"] == 0
+            mock_ind.assert_called_once_with(as_of_date="20260619", run_dir=None)
 
 
 class TestScreenerBuildPrompt:
@@ -347,7 +516,7 @@ class TestScreenerBuildPrompt:
             patch(
                 "hot_sector_screener.universe_builder.load_industry_signal",
                 return_value=pd.DataFrame(),
-            ),
+            ) as mock_ind,
         ):
             screener = Screener()
             result = screener.build_prompt(trade_date="2026-06-19")
@@ -360,3 +529,4 @@ class TestScreenerBuildPrompt:
             assert "stock_count" in result
             assert "concept_count" in result
             assert result["industry_signal_available"] is False
+            mock_ind.assert_called_once_with(as_of_date="20260619", run_dir=None)

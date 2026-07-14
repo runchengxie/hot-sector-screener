@@ -1,5 +1,5 @@
-# Daily pre-market hotspot universe build
-# Run: uv run hotspot run --config configs/experiments/daily_premarket.yml
+# Daily completed-EOD hotspot universe build
+# Run: uv run hotsector run --config configs/experiments/daily_eod.yml
 
 market: a_share
 

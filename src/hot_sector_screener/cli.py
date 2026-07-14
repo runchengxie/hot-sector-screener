@@ -8,8 +8,10 @@ from pathlib import Path
 from .backtest.etf_backtest import run_etf_backtest
 from .backtest.etf_ml_backtest import run_etf_ml_backtest
 from .backtest.stock_backtest import run_stock_backtest
+from .candidate_contract import CandidateContractError
 from .config import default_config, load_config
-from .data_sources.platform import latest_common_date, summarize_data_coverage
+from .data_sources.platform import summarize_data_coverage
+from .observation_time import date_key, resolve_observation_date
 from .paths import OUTPUTS_DIR
 from .production_quality import (
     DEFAULT_REQUIRED_SOURCES,
@@ -17,6 +19,7 @@ from .production_quality import (
     validate_candidate_output,
 )
 from .signal_export import load_candidate_result, write_signal_artifacts
+from .topic_classifier import TopicValidationError
 from .universe_builder import Screener
 
 
@@ -82,7 +85,6 @@ def build_parser() -> argparse.ArgumentParser:
     es.add_argument("--output-dir", default=None, help="Signal output directory")
     es.add_argument("--model-version", default="hotsector-theme-v2")
     es.add_argument("--feature-set-id", default="topic-concept-hotspot-overlay")
-    es.add_argument("--no-live", action="store_true", help="Mark signals ineligible for live use")
 
     # validate-output — production gate for scheduled handoff jobs
     vo = sub.add_parser(
@@ -177,8 +179,9 @@ def cmd_info(args: argparse.Namespace) -> None:
 def cmd_latest_date(args: argparse.Namespace) -> None:
     """Print latest common date across required sources."""
     sources = parse_source_list(args.sources)
-    latest = latest_common_date(sources)
-    if latest is None:
+    try:
+        latest = resolve_observation_date(None, sources=sources)
+    except RuntimeError:
         print(
             "No common trade date for sources: " + ",".join(sources),
             file=sys.stderr,
@@ -240,24 +243,29 @@ def cmd_run(args: argparse.Namespace) -> None:
         if not topics_path.exists():
             print(f"ERROR: topics file not found: {topics_path}")
             sys.exit(1)
-        with open(topics_path) as f:
-            pre_classified = json.load(f)
-        print(f"  加载预分类主题 ({len(pre_classified)} 个):")
-        for t in pre_classified:
-            print(f"    {t.get('topic', ''):<25s} w={t.get('weight', 0):.2f}")
+        try:
+            with open(topics_path) as f:
+                pre_classified = json.load(f)
+        except json.JSONDecodeError as exc:
+            print(f"ERROR: invalid topics JSON: {exc}", file=sys.stderr)
+            sys.exit(1)
 
-    result = builder.build_universe(
-        trade_date=args.date,
-        output_dir=args.output_dir,
-        topics=pre_classified,
-    )
+    try:
+        result = builder.build_universe(
+            trade_date=args.date,
+            output_dir=args.output_dir,
+            topics=pre_classified,
+        )
+    except TopicValidationError as exc:
+        print(f"ERROR: invalid topics: {exc}", file=sys.stderr)
+        sys.exit(1)
 
     print(f"\n  运行日期: {result['date']}")
     print(f"  生成时间: {result['generated_at']}")
     print(f"  {'=' * 40}")
 
     # Topics
-    print(f"\n  今日主题空间 ({len(result['topics'])} 个主题):")
+    print(f"\n  观测日主题空间 ({len(result['topics'])} 个主题):")
     print(f"  {'主题':<30s} {'权重':>6s} {'来源'}")
     print(f"  {'-' * 60}")
     for t in result["topics"]:
@@ -383,13 +391,16 @@ def cmd_export_signals(args: argparse.Namespace) -> None:
         return
 
     out_dir = Path(args.output_dir) if args.output_dir else default_out_dir
-    result = load_candidate_result(input_path)
+    try:
+        result = load_candidate_result(input_path)
+    except CandidateContractError as exc:
+        print(str(exc), file=sys.stderr)
+        sys.exit(1)
     files = write_signal_artifacts(
         result,
         out_dir,
         model_version=args.model_version,
         feature_set_id=args.feature_set_id,
-        eligible_for_live=not bool(args.no_live),
     )
     print("\n  Signal artifacts:")
     for label, path in files.items():
@@ -432,7 +443,7 @@ def _resolve_config(config_arg: str | None) -> dict:
 
 def _resolve_date(date_arg: str | None) -> str | None:
     if date_arg:
-        return date_arg.replace("-", "")
+        return date_key(date_arg)
     return None
 
 

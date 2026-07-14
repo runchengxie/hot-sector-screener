@@ -5,7 +5,9 @@
 ## 全局说明
 
 - 所有日期参数支持 `YYYY-MM-DD` 和 `YYYYMMDD` 两种格式。
-- 未指定日期时默认使用当天。
+- `scan`、`run` 和 `build-prompt` 未指定日期时，解析为关键数据源共同可用的最近已完成观测日；不会使用 `date.today()`。上海时间 16:00 前不能使用当日，显式未来日或无效日会失败。
+- `universe`、`export-signals` 和 `validate-output` 未指定日期时读取最近已有输出目录。
+- `--date` 表示已完成交易日的观测日/EOD 数据截止日，不是执行日；候选最早供下一交易时段使用。
 - 配置参数 `--config` 指向 YAML 配置文件，不传则使用 `configs/default.yml`（如果存在），否则使用内建默认值。
 
 ## info — 查看数据概况
@@ -21,12 +23,12 @@ uv run hotsector info --source ths_hot    # 只看同花顺热榜
 
 ## scan — 数据收集
 
-收集指定日期的热点数据，不做 LLM 分类。适合开盘前快速确认数据是否到位。
+收集指定观测日的热点数据，不做 LLM 分类。历史日期的行业轮动信号严格按 as-of 读取，不会回退到最新 run。
 
 ```bash
-uv run hotsector scan                        # 当天
+uv run hotsector scan                        # 最近共同可用的已完成观测日
 uv run hotsector scan --date 2026-06-19      # 指定日期
-uv run hotsector scan --date 2026-06-19 --config configs/experiments/daily_premarket.yml
+uv run hotsector scan --date 2026-06-19 --config configs/experiments/daily_eod.yml
 ```
 
 输出内容包括各数据源的行数、列名、同花顺热榜前 10 名样本。
@@ -46,7 +48,7 @@ uv run hotsector run --date 2026-06-19
 | 参数 | 说明 |
 |------|------|
 | `--no-llm` | 跳过 LLM 调用，使用数据驱动的兜底主题提取 |
-| `--load-topics path.json` | 加载外部生成的主题文件，绕过 LLM 分类步骤 |
+| `--load-topics path.json` | 加载外部主题文件；仍执行与实时 LLM 相同的严格 schema、观测词表和来源校验 |
 | `--output-dir path` | 自定义输出目录，默认 `outputs/<YYYYMMDD>` |
 | `--max-candidates N` | 覆盖配置文件中的最大候选股数 |
 | `--stocks-per-topic N` | 覆盖配置文件中每个主题最多选取的股票数 |
@@ -58,6 +60,8 @@ uv run hotsector run --date 2026-06-19
 ```bash
 uv run hotsector run --date 2026-06-19 --load-topics topics.json
 ```
+
+外部主题只能包含 `topic`、`weight`、`reasoning`、`related_concepts`、`source_signals` 五个字段。关联概念必须来自该观测日输入词表，来源必须在该次观测中真实可用；股票代码、公司名、伪概念或 `model_pick` 一类来源会使命令以非 0 退出。
 
 不想等 LLM 调用，直接用数据驱动的方式提取主题：
 
@@ -88,12 +92,12 @@ uv run hotsector universe --date 2026-06-19 --limit 50  # 显示 50 只
 
 把 `candidate_universe.json` 转成 research-workspace 可消费的 `signals.parquet`、
 `signals.csv` 和 `signals.meta.json`。`hotsector run` 默认已经自动导出；这个命令用于
-从历史候选池重新生成信号产物。
+从历史候选池重新生成信号产物。这里导出的始终是候选池研究信号，固定
+`eligible_for_live=false`，不能直接交给执行系统。
 
 ```bash
 uv run hotsector export-signals --date 2026-06-19
 uv run hotsector export-signals --input outputs/20260619/candidate_universe.json
-uv run hotsector export-signals --date 2026-06-19 --no-live
 ```
 
 常用参数：
@@ -105,7 +109,6 @@ uv run hotsector export-signals --date 2026-06-19 --no-live
 | `--output-dir` | 自定义信号输出目录 |
 | `--model-version` | 写入 `model_version` 字段 |
 | `--feature-set-id` | 写入 `feature_set_id` 字段 |
-| `--no-live` | 将 `eligible_for_live` 置为 false |
 
 ## build-prompt — 生成 LLM 提示词
 

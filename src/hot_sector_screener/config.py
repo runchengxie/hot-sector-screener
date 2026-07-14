@@ -70,14 +70,14 @@ def load_config(config_path: str | Path) -> dict[str, Any]:
             "signal_feature_set_id": payload.get("output", {}).get(
                 "signal_feature_set_id", "topic-concept-hotspot-overlay"
             ),
-            "eligible_for_live": payload.get("output", {}).get("eligible_for_live", True),
+            "eligible_for_live": False,
         },
         "rotation_signal_dir": payload.get("rotation_signal_dir"),
     }
 
 
 def default_config() -> dict[str, Any]:
-    """Return a sensible default config for daily pre-market use."""
+    """Return defaults for building a next-session pool from completed EOD data."""
     return {
         "market": "a_share",
         "date": "",
@@ -114,7 +114,7 @@ def default_config() -> dict[str, Any]:
             "export_signals": True,
             "signal_model_version": "hotsector-theme-v2",
             "signal_feature_set_id": "topic-concept-hotspot-overlay",
-            "eligible_for_live": True,
+            "eligible_for_live": False,
         },
         "rotation_signal_dir": None,
     }

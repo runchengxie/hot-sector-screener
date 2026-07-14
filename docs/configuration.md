@@ -8,9 +8,13 @@
 market: a_share
 
 hotspot_sources:
-  - ths_hot
   - dc_concept
-  - kpl_concept
+  - dc_concept_cons
+  - kpl_concept_cons
+  - kpl_list
+  - limit_step
+  - limit_cpt_list
+  - limit_list_ths
 
 llm:
   enabled: true
@@ -36,9 +40,9 @@ output:
   export_signals: true
   signal_model_version: hotsector-theme-v2
   signal_feature_set_id: topic-concept-hotspot-overlay
-  eligible_for_live: true
+  eligible_for_live: false
 
-# rotation_signal_dir: /path/to/rotation-v3/latest
+# rotation_signal_dir: /path/to/rotation-v3/run-20260619
 ```
 
 ## 字段说明
@@ -48,17 +52,21 @@ output:
 | 字段 | 默认值 | 说明 |
 |------|--------|------|
 | `market` | `a_share` | 市场标识，当前仅支持 A 股 |
-| `rotation_signal_dir` | null | 可选，覆盖 rotation-v3 行业信号的读取路径 |
+| `rotation_signal_dir` | null | 可选，固定 rotation-v3 run；其中 `signal_date` 仍必须不晚于观测日 |
 
 ### hotspot_sources
 
 | 值 | 说明 |
 |----|------|
-| `ths_hot` | 同花顺热榜 |
 | `dc_concept` | 东方财富概念板块 |
-| `kpl_concept` | 开盘啦概念 |
+| `dc_concept_cons` | 东方财富概念成分 |
+| `kpl_concept_cons` | 开盘啦概念成分 |
+| `kpl_list` | 开盘啦涨停/炸板榜单 |
+| `limit_step` | 连板天梯 |
+| `limit_cpt_list` | 涨停概念榜单 |
+| `limit_list_ths` | 同花顺涨停榜单 |
 
-当前固定支持这 3 个来源，配置项作为可扩展预留。
+生产质量门默认要求以上 7 个关键源在同一观测日可用。`ths_hot`、`hotspot_features` 和 `daily` 是可选增强源，不参与默认共同日期门槛。
 
 ### llm
 
@@ -93,4 +101,4 @@ output:
 | `export_signals` | true | 是否输出 research-workspace 标准信号产物 |
 | `signal_model_version` | `hotsector-theme-v2` | 写入信号产物的 `model_version` |
 | `signal_feature_set_id` | `topic-concept-hotspot-overlay` | 写入信号产物的 `feature_set_id` |
-| `eligible_for_live` | true | 信号是否标记为可进入 live 候选 |
+| `eligible_for_live` | false | 固定为 false；本仓只产候选池，下游发布门禁负责晋升 |

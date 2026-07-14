@@ -5,6 +5,7 @@
 - `candidate_universe.json`
 - `candidate_universe.csv`
 - `candidate_quality.json`
+- `candidate_outcomes.json`
 - `signals.parquet`
 - `signals.csv`
 - `signals.meta.json`
@@ -13,13 +14,45 @@
 
 ## candidate_universe.json
 
-完整输出结果，包含主题空间、候选股票列表以及运行元信息。
+完整输出结果，包含主题空间、候选股票列表以及运行元信息。v1 字段已冻结；可执行的 canonical payload 见 [`examples/candidate_universe.v1.json`](../examples/candidate_universe.v1.json)，并由仓内测试直接调用 producer validator 校验。
 
 ```json
 {
+  "schema_version": "1.0.0",
+  "artifact_type": "hot_sector_candidate_universe",
+  "market": "CN",
   "date": "2026-06-19",
   "date_int": "20260619",
-  "generated_at": "2026-06-19T08:30:00",
+  "observation_date": "20260619",
+  "data_cutoff": "20260619",
+  "data_cutoff_semantics": "end_of_day",
+  "execution_not_before": "next_trading_session",
+  "future_data_included": false,
+  "generated_at": "2026-06-19T16:30:00+08:00",
+  "provenance": {
+    "timezone": "Asia/Shanghai",
+    "observation_date": "20260619",
+    "data_cutoff": "20260619",
+    "future_data_included": false,
+    "artifact_role": "candidate_universe",
+    "strict_point_in_time": false,
+    "rotation": {
+      "as_of_date": "20260619",
+      "signal_date": null,
+      "provenance_level": "unavailable",
+      "strict_point_in_time": false,
+      "publisher_receipt_verified": false
+    }
+  },
+  "evidence": {
+    "strict_point_in_time": false,
+    "out_of_sample_claim": false,
+    "temporal_context": "same_day_eod_generation",
+    "limitations": [
+      "rotation_publisher_receipt_unavailable",
+      "candidate_artifact_does_not_establish_out_of_sample_validity"
+    ]
+  },
   "topics": [
     {
       "topic": "AI医疗",
@@ -44,7 +77,7 @@
       "source_concepts": ["CPO概念"]
     }
   ],
-  "universe_size": 85,
+  "universe_size": 1,
   "config_snapshot": {
     "max_candidates": 100,
     "min_candidates": 30,
@@ -59,18 +92,15 @@
     "industry_signal_available": false
   },
   "quality_report": {
-    "available": true,
-    "horizons": {
-      "t_plus_1": {
-        "available": true,
-        "count": 85,
-        "mean_return_pct": 0.82,
-        "median_return_pct": 0.31,
-        "hit_rate_pct": 57.6
-      }
-    }
+    "available": false,
+    "reason": "future_data_excluded_from_generation",
+    "horizons": {}
   },
-  "output_dir": "/home/richard/code/hot-sector-screener/outputs/20260619"
+  "outcome_report": {
+    "available": false,
+    "reason": "future_data_excluded_from_generation",
+    "horizons": {}
+  }
 }
 ```
 
@@ -78,15 +108,24 @@
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
+| `schema_version` | string | 固定 `1.0.0`；旧版或缺失版本的产物会被 fail closed 拒绝 |
+| `artifact_type` | string | 固定 `hot_sector_candidate_universe` |
+| `market` | string | 固定 `CN` |
 | `date` | string | 交易日（yyyy-MM-dd 格式） |
 | `date_int` | string | 交易日（yyyyMMdd 格式，用于目录路径） |
-| `generated_at` | string | 生成时间戳 |
+| `observation_date` | string | 观测日，表示本次候选使用的已完成交易日 |
+| `data_cutoff` | string | 所有生成输入不得晚于该日期 |
+| `execution_not_before` | string | 固定 `next_trading_session`，观测日不是执行日 |
+| `future_data_included` | bool | 固定 `false` |
+| `generated_at` | string | 带 UTC offset 的实际生成时间；同日 EOD 产物应在收盘后生成 |
+| `provenance` | object | 观测日、时区、rotation 的 signal-date-only 证据与 `strict_point_in_time=false` 声明 |
+| `evidence` | object | 生成时序、缺失 receipt 和不构成 OOS 有效性的限制说明 |
 | `topics` | array | LLM 识别的当日主题空间，每个主题包含名称、权重、来源信号等 |
 | `candidate_universe` | array | 候选股票列表 |
 | `universe_size` | int | 候选池股票数量，通常在 50-100 只之间 |
 | `config_snapshot` | object | 运行时的配置快照 |
 | `data_sources` | object | 各数据源可用性标记 |
-| `quality_report` | object | 候选池后续表现回看；后续行情尚不可用时 `available=false` |
+| `quality_report` | object | 生成阶段固定 deferred，不读取未来行情 |
 
 ### 候选股票字段
 
@@ -94,15 +133,15 @@
 |------|------|------|
 | `ts_code` | string | 股票代码，例如 `300308.SZ` |
 | `name` | string | 股票名称 |
-| `relevance` | float | 与主题的相关性得分，0-1 之间 |
-| `score` | float | 主题权重、概念强度、成分热度等聚合后的原始分 |
+| `relevance` | float | 必填、有限；与主题的相关性得分，0-1 之间 |
+| `score` | float | 必填、有限；主题权重、概念强度、成分热度等聚合后的原始分 |
 | `hotspot_feature_score` | float | 派生热点特征得分，0-1；有对应特征时输出 |
 | `hotspot_score_multiplier` | float | 派生热点特征叠加到原始分上的有界乘数 |
 | `liquidity_score` | float | 流动性分，来自成交额分位，0-1 之间 |
 | `amount_rank_pct` | float | 当日成交额在全市场中的百分位 |
 | `close` | float | 当日收盘价，用于价格过滤 |
-| `source_topics` | array | 该股票匹配到的主题列表 |
-| `source_concepts` | array | 该股票命中的标准化概念 |
+| `source_topics` | array | 必填字符串数组；该股票匹配到的主题列表 |
+| `source_concepts` | array | 必填字符串数组；该股票命中的标准化概念 |
 
 ## candidate_universe.csv
 
@@ -110,7 +149,21 @@
 
 ## candidate_quality.json
 
-候选池质量回看。若数据湖中已有后续交易日的日线数据，会输出 T+1/T+3/T+5 的平均收益、中位数收益、胜率和样本数；否则 `available=false` 并给出 `reason`。
+候选生成阶段只写以下 deferred stub：
+
+```json
+{
+  "available": false,
+  "reason": "future_data_excluded_from_generation",
+  "horizons": {}
+}
+```
+
+`hotsector run` 不读取 T+1/T+3/T+5 行情。候选池后续表现必须由独立的事后评价 owner/流程在未来数据实际可用后计算，不能回填并影响原始候选或 live eligibility。
+
+## candidate_outcomes.json
+
+与 `candidate_quality.json` 相同，生成阶段只记录 deferred stub。保留文件名用于兼容既有产物消费者，不代表生成流程已经观察到未来结果。
 
 ## signals.parquet / signals.csv
 
@@ -127,15 +180,25 @@ research-workspace 可消费的标准信号产物，契约名为 `alpha_research
 | `rank` | int | 当日排名 |
 | `model_version` | string | 信号模型版本 |
 | `feature_set_id` | string | 特征/信号口径 |
-| `eligible_for_backtest` | bool | 是否可用于回测 |
-| `eligible_for_live` | bool | 是否可用于 live 候选 |
+| `eligible_for_backtest` | bool | 当前 v1 候选契约通过后可进入独立回测；不表示已有 OOS 证据 |
+| `eligible_for_live` | bool | 固定为 `false`；下游发布门禁负责晋升 |
 
 会保留部分候选池辅助字段，例如 `name`、`source_topics`、`source_concepts`、
 `liquidity_score`、`amount_rank_pct`、`hotspot_feature_score`。
 
 ## signals.meta.json
 
-记录信号契约、schema 版本、行数、来源候选池、数据源可用性和运行配置快照。
+记录信号契约、schema 版本、行数、来源候选池、数据源可用性和运行配置快照。关键边界字段包括：
+
+- `artifact_role: candidate_universe`
+- `execution_eligible: false`
+- `data_cutoff: <observation_date>`
+- `data_cutoff_semantics: end_of_day`
+- `execution_not_before: next_trading_session`
+- `future_data_included: false`
+- `strict_point_in_time: false`
+- `evidence.out_of_sample_claim: false`
+- `evidence.temporal_context: same_day_eod_generation | post_observation_generation`
 
 ## lineage.json
 
@@ -143,8 +206,16 @@ research-workspace 可消费的标准信号产物，契约名为 `alpha_research
 
 ```json
 {
+  "schema_version": "1.0.0",
+  "artifact_type": "hot_sector_candidate_universe",
+  "market": "CN",
   "date": "2026-06-19",
-  "generated_at": "2026-06-19T08:30:00",
+  "observation_date": "20260619",
+  "data_cutoff": "20260619",
+  "data_cutoff_semantics": "end_of_day",
+  "execution_not_before": "next_trading_session",
+  "future_data_included": false,
+  "generated_at": "2026-06-19T16:30:00+08:00",
   "run_config": "run_config.json",
   "data_sources": {
     "ths_hot_available": true,

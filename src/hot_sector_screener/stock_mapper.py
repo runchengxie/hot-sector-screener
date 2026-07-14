@@ -113,23 +113,19 @@ class StockMapper:
                     self._add_concept_codes(name, self._dc_code_lookup[theme_code])
                     self._add_concept_codes(theme_code, self._dc_code_lookup[theme_code])
 
-        # Also try name matching directly from dc_cons
-        if not self.dc_cons.empty and "name" in self.dc_cons.columns:
-            for _, row in self.dc_cons.iterrows():
-                name = str(row.get("name", "")).strip()
-                code = _normalize_ts_code(str(row.get("ts_code", "")))
-                if name and code:
-                    self._dc_name_lookup.setdefault(name, set()).add(code)
-
-        # Build lookup from kpl: con_name → set of con_code (stock code)
+        # Build lookup from KPL concept name → constituent con_code (stock code).
+        # In the platform schema, name is the concept and con_name is the stock name.
         self._kpl_lookup: dict[str, set[str]] = {}
         if not self.kpl_cons.empty and "con_code" in self.kpl_cons.columns:
             for _, row in self.kpl_cons.iterrows():
-                key = str(row.get("con_name", "")).strip()
+                key = str(row.get("name", "")).strip()
                 code = _normalize_ts_code(str(row.get("con_code", "")))
                 if key and code:
                     for term in expand_concept_terms(key):
                         self._kpl_lookup.setdefault(term, set()).add(code)
+                    stock_name = str(row.get("con_name", "")).strip()
+                    if stock_name:
+                        self._name_by_code.setdefault(code, stock_name)
                     hot_num = _safe_float(row.get("hot_num"))
                     if hot_num > 0:
                         self._stock_hot_score[code] = max(
@@ -336,40 +332,8 @@ class StockMapper:
             for code in codes:
                 add_candidate(code, topic_weight * concept_score, str(concept), "related_concept")
 
-            # Also try matching stock names directly (fallback for broad terms)
-            if not codes and not self.dc_cons.empty and "name" in self.dc_cons.columns:
-                match_mask = self.dc_cons["name"].str.contains(
-                    re.escape(concept), case=False, na=False
-                )
-                for _, row in self.dc_cons[match_mask].iterrows():
-                    code = _normalize_ts_code(str(row.get("ts_code", "")))
-                    if code:
-                        add_candidate(code, topic_weight * 0.5, str(concept), "stock_name")
-
-        # 2. If topic_name matches a concept directly (and wasn't already in related_concepts)
-        if topic_name and topic_name not in related_concepts:
-            codes = self._match_concept(topic_name)
-            concept_score = self._concept_strength_score(str(topic_name))
-            for code in codes:
-                add_candidate(
-                    code,
-                    topic_weight * concept_score * 1.2,
-                    str(topic_name),
-                    "topic_name",
-                )
-
-        # 3. If no concept mapping was found, use kpl descriptions
-        if not candidates and not self.kpl_cons.empty and "desc" in self.kpl_cons.columns:
-            match_mask = self.kpl_cons["desc"].str.contains(
-                re.escape(topic_name), case=False, na=False
-            )
-            if match_mask.any():
-                for _, row in self.kpl_cons[match_mask].iterrows():
-                    code = _normalize_ts_code(str(row.get("con_code") or row.get("ts_code", "")))
-                    if code:
-                        add_candidate(code, topic_weight * 0.7, str(topic_name), "kpl_desc")
-
-        # 4. Sort by relevance and limit
+        # 2. Sort by relevance and limit. The free-form topic label is display-only;
+        # only related concepts that match deterministic concept lookups may map stocks.
         sorted_candidates = sorted(candidates.items(), key=lambda item: -float(item[1]["score"]))
         max_score = max((float(item["score"]) for item in candidates.values()), default=1.0)
 

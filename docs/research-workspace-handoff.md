@@ -23,6 +23,7 @@ quant-execution-engine
 - `candidate_universe.json`
 - `candidate_universe.csv`
 - `candidate_quality.json`
+- `candidate_outcomes.json`
 - `lineage.json`
 - `run_config.json`
 - `signals.parquet`
@@ -42,8 +43,8 @@ quant-execution-engine
 | `rank` | 当日按 `signal_backtest` 降序排名 |
 | `model_version` | 默认 `hotsector-theme-v2` |
 | `feature_set_id` | 默认 `topic-concept-hotspot-overlay` |
-| `eligible_for_backtest` | 是否可回测 |
-| `eligible_for_live` | 是否可进入 live 候选 |
+| `eligible_for_backtest` | 通过 v1 候选结构契约，可进入独立回测；不表示已有 OOS 证据 |
+| `eligible_for_live` | 固定 `false`；本层产物只能作为研究候选 |
 
 ## 手动运行
 
@@ -80,8 +81,9 @@ EXPORT_TARGETS=0
 
 脚本未传 `TRADE_DATE` 时，会用 `hotsector latest-date` 选择关键热点/概念源共同可用的最近交易日。
 随后执行 `hotsector validate-output`，要求关键源可用、候选数量达到 `min_candidates`、
-并且 `signals.parquet` 非空。`daily` 仍会被用于流动性过滤和质量报告，但不作为第一级日更的
-默认硬门槛。质量门失败时脚本返回非 0，避免把空文件当作每日建议。
+并且 `signals.parquet` 非空。`daily` 只读取观测日及此前数据，用于流动性过滤和技术确认；
+第一级生成路径不会读取未来行情，`candidate_quality.json` 和 `candidate_outcomes.json`
+只写 deferred stub。事后评价由独立研究流程完成。质量门失败时脚本返回非 0，避免把空文件当作每日建议。
 
 要继续触发 `strategy-pipeline`，显式打开：
 
