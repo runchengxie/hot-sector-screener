@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from typing import Any
 
 import pandas as pd
 
@@ -14,7 +15,9 @@ from tests.candidate_factory import valid_candidate_payload
 
 
 def _write_candidate_payload(path, *, size: int, source_value: bool = True) -> None:
-    data_sources = {f"{source}_available": source_value for source in DEFAULT_REQUIRED_SOURCES}
+    data_sources: dict[str, Any] = {
+        f"{source}_available": source_value for source in DEFAULT_REQUIRED_SOURCES
+    }
     candidates = [
         {
             "ts_code": f"00000{i}.SZ",

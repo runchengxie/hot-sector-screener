@@ -26,14 +26,14 @@ _ENV = {
 
 
 def _adapter(**overrides: object) -> ChatCompletionsAdapter:
-    values: dict[str, object] = {
+    values: dict[str, Any] = {
         "api_url": _ENV["LLM_API_URL"],
         "api_key": _ENV["LLM_API_KEY"],
         "model": _ENV["LLM_MODEL"],
         "provider_id": _ENV["LLM_PROVIDER_ID"],
     }
     values.update(overrides)
-    return ChatCompletionsAdapter(**values)  # type: ignore[arg-type]
+    return ChatCompletionsAdapter(**values)
 
 
 def _mock_response(monkeypatch: pytest.MonkeyPatch, body: bytes) -> MagicMock:
