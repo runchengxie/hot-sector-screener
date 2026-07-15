@@ -221,6 +221,17 @@ research-workspace 可消费的标准信号产物，契约名为 `alpha_research
     "ths_hot_available": true,
     ...
   },
+  "topic_classification": {
+    "mode": "remote",
+    "provider_receipt": {
+      "protocol": "chat_completions.v1",
+      "provider_id": "<private-runtime-value>",
+      "model": "<private-runtime-value>",
+      "api_host": "<private-runtime-value>",
+      "prompt_sha256": "<sha256>",
+      "response_sha256": "<sha256>"
+    }
+  },
   "topics_count": 4,
   "universe_size": 85,
   "output_files": {
@@ -235,6 +246,12 @@ research-workspace 可消费的标准信号产物，契约名为 `alpha_research
   }
 }
 ```
+
+`topic_classification` 是本地内部审计字段，不进入 `candidate_universe.json`、信号文件或
+客户展示。远端模式记录部署侧供应商标识、模型、API host、完整无凭据请求语义的
+`prompt_sha256`（system/user messages、temperature、max tokens 和 model）以及响应 hash，
+但绝不记录 API key；显式 `--no-llm` 或 `llm.enabled: false` 时记录
+`mode: deterministic`，`--load-topics` 时记录 `mode: external_topics`。
 
 ## run_config.json
 

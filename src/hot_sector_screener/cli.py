@@ -19,7 +19,7 @@ from .production_quality import (
     validate_candidate_output,
 )
 from .signal_export import load_candidate_result, write_signal_artifacts
-from .topic_classifier import TopicValidationError
+from .topic_classifier import TopicClassificationError, TopicValidationError
 from .universe_builder import Screener
 
 
@@ -50,7 +50,9 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--date", default=None, help="Trade date (YYYY-MM-DD or YYYYMMDD)")
     run.add_argument("--config", default=None, help="Config YAML path")
     run.add_argument(
-        "--no-llm", action="store_true", help="Skip LLM, use fallback topic extraction"
+        "--no-llm",
+        action="store_true",
+        help="Explicitly skip LLM and use deterministic topic extraction",
     )
     run.add_argument("--output-dir", default=None, help="Custom output directory")
     run.add_argument("--max-candidates", type=int, default=None, help="Override max candidates")
@@ -224,7 +226,11 @@ def cmd_scan(args: argparse.Namespace) -> None:
 
 def cmd_run(args: argparse.Namespace) -> None:
     """Full pipeline run."""
-    config = _resolve_config(args.config)
+    try:
+        config = _resolve_config(args.config)
+    except (FileNotFoundError, ValueError) as exc:
+        print(f"ERROR: invalid config: {exc}", file=sys.stderr)
+        sys.exit(1)
 
     # CLI overrides
     if args.no_llm:
@@ -234,7 +240,11 @@ def cmd_run(args: argparse.Namespace) -> None:
     if args.stocks_per_topic is not None:
         config.setdefault("universe", {})["stocks_per_topic"] = args.stocks_per_topic
 
-    builder = Screener(config)
+    try:
+        builder = Screener(config)
+    except ValueError as exc:
+        print(f"ERROR: invalid config: {exc}", file=sys.stderr)
+        sys.exit(1)
 
     # Load pre-classified topics if --load-topics given
     pre_classified = None
@@ -258,6 +268,9 @@ def cmd_run(args: argparse.Namespace) -> None:
         )
     except TopicValidationError as exc:
         print(f"ERROR: invalid topics: {exc}", file=sys.stderr)
+        sys.exit(1)
+    except TopicClassificationError as exc:
+        print(f"ERROR: topic classification failed: {exc}", file=sys.stderr)
         sys.exit(1)
 
     print(f"\n  运行日期: {result['date']}")

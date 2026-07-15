@@ -2,17 +2,43 @@
 
 from __future__ import annotations
 
-from unittest.mock import patch
+import json
+from unittest.mock import Mock, patch
 
 import pytest
 
 from hot_sector_screener.topic_classifier import (
+    TopicClassificationError,
     TopicClassifier,
     TopicValidationError,
     build_topic_prompt,
     parse_topic_response,
     validate_and_sanitize_topics,
 )
+from hot_sector_screener.topic_provider import (
+    ProviderReceipt,
+    ProviderResponse,
+    TopicProviderError,
+)
+
+
+def _provider_response(
+    content: str,
+    *,
+    provider_id: str = "test-gateway",
+    model: str = "topic-classifier-v1",
+    api_host: str = "classification.example.test",
+) -> ProviderResponse:
+    return ProviderResponse(
+        content=content,
+        receipt=ProviderReceipt(
+            provider_id=provider_id,
+            model=model,
+            api_host=api_host,
+            prompt_sha256="a" * 64,
+            response_sha256="b" * 64,
+        ),
+    )
 
 
 class TestTopicClassifier:
@@ -81,36 +107,230 @@ class TestTopicClassifier:
 
         assert parse_topic_response(response) == []
 
-    def test_classifier_rejects_invalid_llm_provenance_and_uses_fallback(self):
+    def test_classifier_rejects_invalid_llm_provenance_without_fallback(self):
         response = (
             '[{"topic": "AI 精选", "weight": 1.0, "reasoning": "test", '
             '"related_concepts": ["中际旭创", "GPU"], '
             '"source_signals": ["ths_hot", "dc_concept", "etf_rotation", "model_pick"]}]'
         )
-        classifier = TopicClassifier()
-        fallback = [
-            {
-                "topic": "fallback",
-                "weight": 1.0,
-                "reasoning": "invalid LLM response",
-                "related_concepts": ["AI芯片"],
-                "source_signals": ["dc_concept"],
-            }
-        ]
+        provider = Mock()
+        provider.complete.return_value = _provider_response(response)
+        classifier = TopicClassifier(provider=provider)
         with (
-            patch(
-                "hot_sector_screener.topic_classifier._call_llm_for_topics",
-                return_value=response,
-            ),
-            patch.object(classifier, "_fallback_topics", return_value=fallback) as fallback_call,
+            patch.object(classifier, "_fallback_topics") as fallback_call,
+            pytest.raises(TopicClassificationError, match="observation-bound"),
         ):
-            topics = classifier.classify(
+            classifier.classify(
                 ths_hot_stocks=[],
                 dc_concepts=[{"name": "AI芯片"}],
             )
 
-        assert topics == fallback
-        fallback_call.assert_called_once()
+        fallback_call.assert_not_called()
+
+    def test_classifier_rejects_transport_failure_without_fallback(self):
+        provider = Mock()
+        provider.complete.side_effect = TopicProviderError("provider request failed")
+        classifier = TopicClassifier(provider=provider)
+
+        with (
+            patch.object(classifier, "_fallback_topics") as fallback_call,
+            pytest.raises(TopicClassificationError, match="provider request failed"),
+        ):
+            classifier.classify(
+                ths_hot_stocks=[],
+                dc_concepts=[{"name": "AI芯片"}],
+            )
+
+        fallback_call.assert_not_called()
+
+    def test_classifier_records_receipt_only_after_validated_response(self):
+        response = (
+            '[{"topic": "AI算力", "weight": 0.8, "reasoning": "观测日热点", '
+            '"related_concepts": ["AI芯片"], "source_signals": ["dc_concept"]}]'
+        )
+        provider = Mock()
+        provider.complete.return_value = _provider_response(response)
+        classifier = TopicClassifier(provider=provider)
+
+        topics = classifier.classify(
+            ths_hot_stocks=[],
+            dc_concepts=[{"name": "AI芯片"}],
+        )
+
+        assert topics[0]["topic"] == "AI算力"
+        assert topics[0]["reasoning"] == "观测日热点"
+        assert classifier.last_provider_receipt == _provider_response(response).receipt
+
+    @pytest.mark.parametrize(
+        ("field", "unsafe_text"),
+        [
+            ("topic", "runtime＿ow ner 热点"),
+            ("reasoning", "由 RANK－ENGINE V9 完成归类"),
+            ("reasoning", "classification＿node.example.test"),
+            ("reasoning", "详见 ｈｔｔｐｓ：／／news.example.test"),
+            ("reasoning", "详见 news.example.tech/path"),
+            ("reasoning", "详见 192.0.2.1/path"),
+            ("reasoning", "API＿K E Y 已配置"),
+            ("reasoning", "access k-e-y 元数据"),
+            ("reasoning", "pro-vider meta-data"),
+            ("reasoning", "模 型 标 识 信息"),
+            ("reasoning", "response h-a-s-h 信息"),
+            ("reasoning", "供 应 商 标 识 信息"),
+            ("reasoning", "endpoint U-R-L 信息"),
+            ("reasoning", f"{'市场热点' * 500}，包含 access to-k e n 元数据"),
+        ],
+    )
+    def test_classifier_rejects_metadata_leaks_in_remote_public_text(
+        self,
+        field,
+        unsafe_text,
+    ):
+        topic = {
+            "topic": "AI算力",
+            "weight": 0.8,
+            "reasoning": "观测日热点",
+            "related_concepts": ["AI芯片"],
+            "source_signals": ["dc_concept"],
+        }
+        topic[field] = unsafe_text
+        response = json.dumps([topic], ensure_ascii=False)
+        provider = Mock()
+        provider.complete.return_value = _provider_response(
+            response,
+            provider_id="runtime-owner",
+            model="rank-engine-v9",
+            api_host="classification-node.example.test",
+        )
+        classifier = TopicClassifier(provider=provider)
+
+        with pytest.raises(TopicClassificationError) as exc_info:
+            classifier.classify(
+                ths_hot_stocks=[],
+                dc_concepts=[{"name": "AI芯片"}],
+            )
+
+        assert str(exc_info.value) == "provider response failed public text safety validation"
+        assert "runtime-owner" not in str(exc_info.value)
+        assert "rank-engine-v9" not in str(exc_info.value)
+        assert "classification-node" not in str(exc_info.value)
+        assert classifier.last_provider_receipt is None
+
+    @pytest.mark.parametrize(
+        ("provider_id", "model", "unsafe_text"),
+        [
+            ("latticebird-runtime", "topic-engine-v9", "LATTICE＿BIRD 归类"),
+            ("runtime-owner", "copperfalcon-family-v9", "Copper Falcon 归类"),
+        ],
+    )
+    def test_classifier_rejects_distinctive_provider_and_model_components(
+        self,
+        provider_id,
+        model,
+        unsafe_text,
+    ):
+        response = json.dumps(
+            [
+                {
+                    "topic": "AI算力",
+                    "weight": 0.8,
+                    "reasoning": unsafe_text,
+                    "related_concepts": ["AI芯片"],
+                    "source_signals": ["dc_concept"],
+                }
+            ],
+            ensure_ascii=False,
+        )
+        provider = Mock()
+        provider.complete.return_value = _provider_response(
+            response,
+            provider_id=provider_id,
+            model=model,
+            api_host="classification-node.example.test",
+        )
+
+        with pytest.raises(TopicClassificationError) as exc_info:
+            TopicClassifier(provider=provider).classify(
+                ths_hot_stocks=[],
+                dc_concepts=[{"name": "AI芯片"}],
+            )
+
+        assert str(exc_info.value) == "provider response failed public text safety validation"
+        assert provider_id not in str(exc_info.value)
+        assert model not in str(exc_info.value)
+
+    @pytest.mark.parametrize(
+        "public_text",
+        [
+            "大模型应用",
+            "模型推理",
+            "头部供应商",
+            "核心供应商",
+            "Keyence产业链",
+        ],
+    )
+    def test_classifier_preserves_legitimate_market_language(self, public_text):
+        response = json.dumps(
+            [
+                {
+                    "topic": public_text,
+                    "weight": 0.8,
+                    "reasoning": f"{public_text}在观测日热度上升",
+                    "related_concepts": ["AI芯片"],
+                    "source_signals": ["dc_concept"],
+                }
+            ],
+            ensure_ascii=False,
+        )
+        provider = Mock()
+        provider.complete.return_value = _provider_response(
+            response,
+            provider_id="runtime-owner",
+            model="rank-engine-v9",
+            api_host="classification-node.example.test",
+        )
+
+        topics = TopicClassifier(provider=provider).classify(
+            ths_hot_stocks=[],
+            dc_concepts=[{"name": "AI芯片"}],
+        )
+
+        assert topics[0]["topic"] == public_text
+        assert topics[0]["reasoning"] == f"{public_text}在观测日热度上升"
+
+    def test_api_host_components_are_not_used_as_dynamic_public_text_needles(self):
+        response = (
+            '[{"topic":"Example测试主题","weight":0.8,"reasoning":"观测日热度上升",'
+            '"related_concepts":["AI芯片"],"source_signals":["dc_concept"]}]'
+        )
+        provider = Mock()
+        provider.complete.return_value = _provider_response(
+            response,
+            provider_id="runtime-owner",
+            model="rank-engine-v9",
+            api_host="routing.example.test",
+        )
+
+        topics = TopicClassifier(provider=provider).classify(
+            ths_hot_stocks=[],
+            dc_concepts=[{"name": "AI芯片"}],
+        )
+
+        assert topics[0]["topic"] == "Example测试主题"
+
+    def test_observation_bound_related_concept_is_not_treated_as_free_form_metadata(self):
+        response = (
+            '[{"topic":"智能应用","weight":0.8,"reasoning":"观测日热度上升",'
+            '"related_concepts":["大模型"],"source_signals":["dc_concept"]}]'
+        )
+        provider = Mock()
+        provider.complete.return_value = _provider_response(response)
+
+        topics = TopicClassifier(provider=provider).classify(
+            ths_hot_stocks=[],
+            dc_concepts=[{"name": "大模型"}],
+        )
+
+        assert topics[0]["related_concepts"] == ["大模型"]
 
     def test_parse_markdown_code_block(self):
         response = (

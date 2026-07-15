@@ -47,7 +47,7 @@ uv run hotsector run --date 2026-06-19
 
 | 参数 | 说明 |
 |------|------|
-| `--no-llm` | 跳过 LLM 调用，使用数据驱动的兜底主题提取 |
+| `--no-llm` | 显式跳过 LLM 调用，使用数据驱动的确定性主题提取 |
 | `--load-topics path.json` | 加载外部主题文件；仍执行与实时 LLM 相同的严格 schema、观测词表和来源校验 |
 | `--output-dir path` | 自定义输出目录，默认 `outputs/<YYYYMMDD>` |
 | `--max-candidates N` | 覆盖配置文件中的最大候选股数 |
@@ -63,11 +63,15 @@ uv run hotsector run --date 2026-06-19 --load-topics topics.json
 
 外部主题只能包含 `topic`、`weight`、`reasoning`、`related_concepts`、`source_signals` 五个字段。关联概念必须来自该观测日输入词表，来源必须在该次观测中真实可用；股票代码、公司名、伪概念或 `model_pick` 一类来源会使命令以非 0 退出。
 
-不想等 LLM 调用，直接用数据驱动的方式提取主题：
+显式选择数据驱动的确定性主题提取：
 
 ```bash
 uv run hotsector run --date 2026-06-19 --no-llm
 ```
+
+当 `llm.enabled: true` 且未传 `--no-llm` 时，远端模式要求显式设置 `LLM_API_URL`、`LLM_API_KEY`、
+`LLM_MODEL` 和 `LLM_PROVIDER_ID`。任何配置、网络、响应 schema 或主题验证错误都会让
+命令以非 0 退出，不会自动降级到确定性结果。
 
 调整候选池规模：
 

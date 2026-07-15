@@ -1,20 +1,20 @@
 from __future__ import annotations
 
 import json
-import os as _os
 import re
-import urllib.error
-import urllib.parse
-import urllib.request
 from typing import Any
 
 from .concept_registry import canonicalize_concept
+from .topic_provider import (
+    ChatCompletionsAdapter,
+    ProviderReceipt,
+    TopicProvider,
+    TopicProviderError,
+)
+from .topic_text_safety import TopicTextSafetyError, validate_public_topic_texts
 
 _ALLOWED_SOURCE_SIGNALS = frozenset({"ths_hot", "dc_concept", "etf_rotation", "limit_cpt_list"})
 _TOPIC_FIELDS = frozenset({"topic", "weight", "reasoning", "related_concepts", "source_signals"})
-_DEEPSEEK_API_URL = "https://api.deepseek.com/v1"
-_DEEPSEEK_HOST = "api.deepseek.com"
-_MAX_LLM_RESPONSE_BYTES = 2 * 1024 * 1024
 _STOCK_CODE_PATTERN = re.compile(r"^\d{6}(?:\.(?:SH|SZ|BJ))?$", re.IGNORECASE)
 
 
@@ -22,26 +22,8 @@ class TopicValidationError(ValueError):
     pass
 
 
-def _url_origin(url: str) -> tuple[str, str, int | None]:
-    parsed = urllib.parse.urlparse(url)
-    default_port = 443 if parsed.scheme.casefold() == "https" else 80
-    return parsed.scheme.casefold(), (parsed.hostname or "").casefold(), parsed.port or default_port
-
-
-class _SameOriginRedirectHandler(urllib.request.HTTPRedirectHandler):
-    """Reject redirects that could forward Authorization outside the configured origin."""
-
-    def redirect_request(self, req, fp, code, msg, headers, newurl):
-        target = urllib.parse.urljoin(req.full_url, newurl)
-        if _url_origin(req.full_url) != _url_origin(target):
-            raise urllib.error.HTTPError(
-                req.full_url,
-                code,
-                "LLM API redirect to a different origin was blocked",
-                headers,
-                fp,
-            )
-        return super().redirect_request(req, fp, code, msg, headers, target)
+class TopicClassificationError(RuntimeError):
+    """Remote topic classification failed without producing a candidate artifact."""
 
 
 def build_topic_prompt(
@@ -338,97 +320,6 @@ def parse_topic_response(response_text: str) -> list[dict[str, Any]]:
     return []
 
 
-def _resolve_llm_endpoint_and_key() -> tuple[str, str]:
-    configured_url = _os.environ.get("LLM_API_URL")
-    api_url = configured_url or _DEEPSEEK_API_URL
-    parsed = urllib.parse.urlparse(api_url)
-    try:
-        _ = parsed.port
-    except ValueError as exc:
-        raise RuntimeError("LLM_API_URL contains an invalid port") from exc
-    if (
-        parsed.scheme != "https"
-        or not parsed.hostname
-        or parsed.username is not None
-        or parsed.password is not None
-        or parsed.query
-        or parsed.fragment
-    ):
-        raise RuntimeError("LLM_API_URL must be an HTTPS URL without embedded credentials")
-
-    generic_key = _os.environ.get("LLM_API_KEY")
-    if parsed.hostname.casefold() == _DEEPSEEK_HOST:
-        api_key = generic_key or _os.environ.get("DEEPSEEK_API_KEY")
-        if not api_key:
-            raise RuntimeError("No LLM API key configured. Set LLM_API_KEY or DEEPSEEK_API_KEY.")
-    else:
-        api_key = generic_key
-        if not api_key:
-            raise RuntimeError("Custom LLM_API_URL requires an independent LLM_API_KEY.")
-    return api_url.rstrip("/"), api_key
-
-
-def _decode_llm_content(body: bytes) -> str:
-    if len(body) > _MAX_LLM_RESPONSE_BYTES:
-        raise RuntimeError("LLM API response exceeded the size limit")
-    try:
-        result = json.loads(body.decode("utf-8"))
-        choices = result["choices"]
-        message = choices[0]["message"]
-        content = message["content"]
-    except (UnicodeDecodeError, json.JSONDecodeError, KeyError, IndexError, TypeError) as exc:
-        raise RuntimeError("LLM API returned an invalid response schema") from exc
-    if not isinstance(content, str) or not content.strip():
-        raise RuntimeError("LLM API returned an empty response")
-    return content
-
-
-def _call_llm_for_topics(prompt: str) -> str:
-    """Call the LLM to classify topics.
-
-    Supports:
-    1. OpenAI-compatible API via LLM_API_KEY or DEEPSEEK_API_KEY
-    2. Optional endpoint/model overrides via LLM_API_URL / LLM_MODEL
-    3. Direct HTTP call when running standalone
-    """
-    api_url, api_key = _resolve_llm_endpoint_and_key()
-    model = _os.environ.get("LLM_MODEL", "deepseek-reasoner")
-
-    payload = json.dumps(
-        {
-            "model": model,
-            "messages": [
-                {
-                    "role": "system",
-                    "content": (
-                        "你是一个 A 股市场主题识别助手。只做信息压缩和分类，"
-                        "不做投资建议。输出严格的 JSON 格式。"
-                    ),
-                },
-                {"role": "user", "content": prompt},
-            ],
-            "temperature": 0.3,
-            "max_tokens": 2000,
-        }
-    ).encode("utf-8")
-
-    req = urllib.request.Request(
-        f"{api_url}/chat/completions",
-        data=payload,
-        headers={
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {api_key}",
-        },
-    )
-    try:
-        opener = urllib.request.build_opener(_SameOriginRedirectHandler())
-        with opener.open(req, timeout=120) as resp:
-            body = resp.read(_MAX_LLM_RESPONSE_BYTES + 1)
-            return _decode_llm_content(body)
-    except (urllib.error.URLError, urllib.error.HTTPError) as e:
-        raise RuntimeError(f"LLM API call failed: {e}") from e
-
-
 class TopicClassifier:
     """Classify observation-date hotspot data into a structured topic graph.
 
@@ -436,8 +327,10 @@ class TopicClassifier:
     It does NOT select stocks — it only outputs a topic/theme space.
     """
 
-    def __init__(self, enabled: bool = True):
+    def __init__(self, enabled: bool = True, provider: TopicProvider | None = None):
         self.enabled = enabled
+        self.provider = provider
+        self.last_provider_receipt: ProviderReceipt | None = None
 
     def classify(
         self,
@@ -452,27 +345,46 @@ class TopicClassifier:
           [{"topic": "AI医疗", "weight": 0.32, "reasoning": "...",
             "related_concepts": [...], "source_signals": [...]}]
         """
+        self.last_provider_receipt = None
         if not self.enabled:
             return self._fallback_topics(ths_hot_stocks, dc_concepts)
 
         prompt = build_topic_prompt(ths_hot_stocks, dc_concepts, industry_signals, latest_date)
-
         try:
-            response = _call_llm_for_topics(prompt)
-            topics = parse_topic_response(response)
+            provider = self.provider or ChatCompletionsAdapter.from_environment()
+            response = provider.complete(prompt)
+        except TopicProviderError as exc:
+            raise TopicClassificationError(str(exc)) from exc
 
-            if topics:
-                return validate_and_sanitize_topics(
-                    topics,
-                    ths_hot_stocks=ths_hot_stocks,
-                    dc_concepts=dc_concepts,
-                    industry_signals=industry_signals,
-                )
-        except (RuntimeError, OSError, TopicValidationError):
-            pass
-
-        # LLM failed or returned unusable output; use fallback
-        return self._fallback_topics(ths_hot_stocks, dc_concepts)
+        topics = parse_topic_response(response.content)
+        if not topics:
+            raise TopicClassificationError("provider response did not use the exact topic schema")
+        try:
+            validated = validate_and_sanitize_topics(
+                topics,
+                ths_hot_stocks=ths_hot_stocks,
+                dc_concepts=dc_concepts,
+                industry_signals=industry_signals,
+            )
+        except TopicValidationError as exc:
+            raise TopicClassificationError(
+                "provider topics failed observation-bound validation"
+            ) from exc
+        try:
+            validate_public_topic_texts(
+                validated,
+                provider_metadata={
+                    "provider_id": response.receipt.provider_id,
+                    "model": response.receipt.model,
+                    "api_host": response.receipt.api_host,
+                },
+            )
+        except TopicTextSafetyError as exc:
+            raise TopicClassificationError(
+                "provider response failed public text safety validation"
+            ) from exc
+        self.last_provider_receipt = response.receipt
+        return validated
 
     @staticmethod
     def _fallback_topics(
