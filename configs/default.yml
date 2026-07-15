@@ -14,8 +14,7 @@ hotspot_sources:
 
 llm:
   enabled: true
-  model: deepseek-reasoner
-  provider: deepseek
+  adapter: chat_completions
   prompt_template: default
 
 universe:

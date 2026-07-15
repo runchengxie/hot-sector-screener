@@ -5,6 +5,39 @@ from typing import Any
 
 import yaml
 
+_LLM_ALLOWED_FIELDS = frozenset({"enabled", "adapter", "prompt_template"})
+_LLM_ADAPTER = "chat_completions"
+
+
+def normalize_llm_config(value: object) -> dict[str, Any]:
+    """Validate supplier-neutral topic-classification settings."""
+    if value is None:
+        value = {}
+    if not isinstance(value, dict):
+        raise ValueError("llm config must be a mapping")
+    unknown = sorted(str(field) for field in set(value) - _LLM_ALLOWED_FIELDS)
+    if unknown:
+        raise ValueError(
+            "unsupported llm config fields: "
+            + ", ".join(unknown)
+            + "; runtime provider settings must use explicit LLM_* environment values"
+        )
+
+    enabled = value.get("enabled", True)
+    if not isinstance(enabled, bool):
+        raise ValueError("llm.enabled must be a boolean")
+    adapter = value.get("adapter", _LLM_ADAPTER)
+    if adapter != _LLM_ADAPTER:
+        raise ValueError(f"llm.adapter must be {_LLM_ADAPTER}")
+    prompt_template = value.get("prompt_template", "default")
+    if prompt_template != "default":
+        raise ValueError("llm.prompt_template must be default")
+    return {
+        "enabled": enabled,
+        "adapter": adapter,
+        "prompt_template": prompt_template,
+    }
+
 
 def load_config(config_path: str | Path) -> dict[str, Any]:
     """Load a hot-sector-screener experiment config YAML."""
@@ -36,12 +69,7 @@ def load_config(config_path: str | Path) -> dict[str, Any]:
                 "limit_list_ths",
             ],
         ),
-        "llm": {
-            "enabled": payload.get("llm", {}).get("enabled", True),
-            "model": payload.get("llm", {}).get("model", "deepseek-reasoner"),
-            "provider": payload.get("llm", {}).get("provider", "deepseek"),
-            "prompt_template": payload.get("llm", {}).get("prompt_template", "default"),
-        },
+        "llm": normalize_llm_config(payload.get("llm")),
         "universe": {
             "max_candidates": payload.get("universe", {}).get("max_candidates", 100),
             "min_candidates": payload.get("universe", {}).get("min_candidates", 30),
@@ -90,12 +118,7 @@ def default_config() -> dict[str, Any]:
             "limit_cpt_list",
             "limit_list_ths",
         ],
-        "llm": {
-            "enabled": True,
-            "model": "deepseek-reasoner",
-            "provider": "deepseek",
-            "prompt_template": "default",
-        },
+        "llm": normalize_llm_config(None),
         "universe": {
             "max_candidates": 100,
             "min_candidates": 30,

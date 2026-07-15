@@ -36,9 +36,6 @@ dev = [
   "ty>=0.0.55",
   "pyarrow>=14.0",
 ]
-# LLM-based topic classification requires `hermes-tools` (built-in to Hermes Agent)
-# For standalone use, install with: pip install openai
-
 [project.scripts]
 hotsector = "hot_sector_screener.cli:main"
 

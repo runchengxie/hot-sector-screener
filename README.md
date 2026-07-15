@@ -32,6 +32,11 @@ uv run hotsector info
 uv run hotsector run --date 2026-06-19
 ```
 
+远端分类不带供应商或模型默认值，运行前必须通过私有环境显式设置
+`LLM_API_URL`、`LLM_API_KEY`、`LLM_MODEL` 和 `LLM_PROVIDER_ID`。远端失败会让命令
+非 0 退出；若要完全使用确定性主题提取，请显式追加 `--no-llm`，或在私有运行配置中
+设置 `llm.enabled: false`。
+
 这里的 `2026-06-19` 是观测日/数据截止日（EOD），不是执行日。候选池最早只能供下一交易时段使用；历史运行的 rotation 信号也会严格限制为 `signal_date <= observation_date`。
 
 查看某天的候选池结果：

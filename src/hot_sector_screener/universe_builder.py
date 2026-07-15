@@ -13,6 +13,7 @@ from .candidate_contract import (
     validate_candidate_result,
 )
 from .confidence import apply_candidate_confidence
+from .config import normalize_llm_config
 from .daily_confirmation import apply_daily_confirmation_overlay, load_daily_history
 from .data_sources.platform import (
     load_daily_data,
@@ -33,10 +34,12 @@ from .ranking import apply_hotspot_feature_overlay
 from .signal_export import write_signal_artifacts
 from .stock_mapper import StockMapper, apply_liquidity_filter
 from .topic_classifier import (
+    TopicClassificationError,
     TopicClassifier,
     build_topic_prompt,
     validate_and_sanitize_topics,
 )
+from .topic_provider import TopicProvider
 
 
 def _df_to_dicts(df: pd.DataFrame) -> list[dict[str, Any]]:
@@ -186,7 +189,12 @@ def _data_source_status(frames: dict[str, pd.DataFrame]) -> dict[str, Any]:
 class Screener:
     """Main builder: collect data → classify topics → map stocks → output universe."""
 
-    def __init__(self, config: dict[str, Any] | None = None):
+    def __init__(
+        self,
+        config: dict[str, Any] | None = None,
+        *,
+        topic_provider: TopicProvider | None = None,
+    ):
         self.config = config or {}
         uc = self.config.get("universe", {})
         self.max_candidates = uc.get("max_candidates", 100)
@@ -206,7 +214,11 @@ class Screener:
         self.confidence_enabled = bool(uc.get("confidence_enabled", True))
         self.rotation_signal_dir = self.config.get("rotation_signal_dir")
 
-        self.classifier = TopicClassifier(enabled=self.config.get("llm", {}).get("enabled", True))
+        llm_config = normalize_llm_config(self.config.get("llm"))
+        self.classifier = TopicClassifier(
+            enabled=llm_config["enabled"],
+            provider=topic_provider,
+        )
 
     def _config_snapshot(self) -> dict[str, Any]:
         return {
@@ -398,6 +410,7 @@ class Screener:
                 dc_concepts=classifier_concepts,
                 industry_signals=ind_list,
             )
+            topic_classification_lineage: dict[str, Any] = {"mode": "external_topics"}
         else:
             topics = self.classifier.classify(
                 ths_hot_stocks=ths_stocks,
@@ -405,6 +418,21 @@ class Screener:
                 industry_signals=ind_list,
                 latest_date=date_str,
             )
+            receipt = self.classifier.last_provider_receipt
+            if not self.classifier.enabled:
+                topic_classification_lineage = {
+                    "mode": "deterministic",
+                    "reason": "explicitly_disabled",
+                }
+            elif receipt is None:
+                raise TopicClassificationError(
+                    "remote topic classification completed without an audit receipt"
+                )
+            else:
+                topic_classification_lineage = {
+                    "mode": "remote",
+                    "provider_receipt": receipt.to_lineage(),
+                }
 
         # 3. Map topics → stocks
         mapper = StockMapper(
@@ -555,6 +583,7 @@ class Screener:
             "evidence": result["evidence"],
             "run_config": config_path.name,
             "data_sources": dict(result["data_sources"]),
+            "topic_classification": topic_classification_lineage,
             "topics_count": len(topics),
             "universe_size": len(filtered),
             "output_files": {

@@ -39,7 +39,7 @@ LLM 分析当日热点 → 输出主题空间:
 
 ## 设计原则
 
-- **LLM 只做信息压缩和主题归类，不做选股。** LLM 输出契约只包含主题、权重、理由、关联概念和来源信号，不包含模型生成的股票代码、股票排名或“AI 精选”文案。`related_concepts` 会与观测日输入概念词表求交；自由主题名和公司名不能触发股票映射。主题到具体股票的映射是确定性规则，不依赖模型判断。即使 LLM 调用失败或结果不可用，系统也有基于概念名称频率的兜底提取逻辑。
+- **LLM 只做信息压缩和主题归类，不做选股。** LLM 输出契约只包含主题、权重、理由、关联概念和来源信号，不包含模型生成的股票代码、股票排名或“AI 精选”文案。`related_concepts` 会与观测日输入概念词表求交；自由主题名和公司名不能触发股票映射。主题到具体股票的映射是确定性规则，不依赖模型判断。远端模式要求显式配置通用 provider adapter；配置、网络、响应、主题验证或客户文案泄漏校验失败都会终止运行。只有显式 `--no-llm` 或 `llm.enabled: false` 才使用基于概念名称频率的确定性提取。
 - **生成路径按观测日封顶，但不冒充严格 PIT。** `observation_date` 表示已完成交易日的 EOD 数据截止点，rotation 信号不允许向未来回退，候选生成不读取 T+1/T+3/T+5 行情。由于 rotation 发布者尚未提供带 `published_at`、`data_cutoff` 和 hash 的 receipt，产物明确记录 `provenance_level=signal_date_only`、`strict_point_in_time=false` 和 OOS 限制；历史日事后重建不能解释为当时已可见。候选最早供下一交易时段使用。
 - **候选不是 live 信号。** 本仓生成的 `signals.*` 角色固定为 `candidate_universe`，`eligible_for_live=false`；只有下游研究和发布门禁可以晋升。
 - **数据湖的单向读取。** 从 `DATA_PLATFORM_ROOT` 读数据，不写回数据湖。

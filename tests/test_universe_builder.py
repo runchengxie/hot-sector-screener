@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import json
 from datetime import datetime
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import pandas as pd
 import pytest
@@ -11,6 +12,7 @@ import pytest
 from hot_sector_screener import universe_builder
 from hot_sector_screener.candidate_contract import validate_candidate_result
 from hot_sector_screener.topic_classifier import TopicValidationError
+from hot_sector_screener.topic_provider import ProviderReceipt, ProviderResponse
 from hot_sector_screener.universe_builder import Screener
 
 
@@ -152,6 +154,11 @@ class TestScreenerInit:
         # defaults preserved for unspecified keys
         assert screener.min_candidates == 30
         assert screener.stocks_per_topic == 25
+
+    @pytest.mark.parametrize("legacy_field", ["model", "provider"])
+    def test_direct_legacy_llm_config_is_rejected(self, legacy_field):
+        with pytest.raises(ValueError, match=legacy_field):
+            Screener({"llm": {legacy_field: "deployment-specific"}})
 
 
 class TestScreenerBuildUniverse:
@@ -409,6 +416,64 @@ class TestScreenerBuildUniverse:
         assert rows["600990.SH"]["name"] == "四创电子"
         assert all(row["source_topics"] for row in rows.values())
         assert all(isinstance(row["source_concepts"], list) for row in rows.values())
+
+    def test_remote_audit_metadata_is_written_only_to_internal_lineage(
+        self,
+        monkeypatch,
+        tmp_path,
+    ):
+        _install_contract_path_loaders(monkeypatch)
+        provider = Mock()
+        provider.complete.return_value = ProviderResponse(
+            content=(
+                '[{"topic":"AI算力","weight":0.8,"reasoning":"观测日热点",'
+                '"related_concepts":["AI算力"],"source_signals":["dc_concept"]}]'
+            ),
+            receipt=ProviderReceipt(
+                provider_id="private-gateway",
+                model="topic-classifier-v1",
+                api_host="classification.private.test",
+                prompt_sha256="a" * 64,
+                response_sha256="b" * 64,
+            ),
+        )
+        screener = Screener(
+            {
+                "output": {"export_signals": True},
+                "universe": {"daily_confirmation_enabled": False},
+            },
+            topic_provider=provider,
+        )
+
+        screener.build_universe(
+            trade_date="2026-06-19",
+            output_dir=str(tmp_path),
+        )
+
+        lineage = json.loads((tmp_path / "lineage.json").read_text(encoding="utf-8"))
+        assert lineage["topic_classification"] == {
+            "mode": "remote",
+            "provider_receipt": {
+                "protocol": "chat_completions.v1",
+                "provider_id": "private-gateway",
+                "model": "topic-classifier-v1",
+                "api_host": "classification.private.test",
+                "prompt_sha256": "a" * 64,
+                "response_sha256": "b" * 64,
+            },
+        }
+        public_payloads = {
+            "candidate_json": (tmp_path / "candidate_universe.json").read_text(encoding="utf-8"),
+            "candidate_csv": (tmp_path / "candidate_universe.csv").read_text(encoding="utf-8"),
+            "signals_csv": (tmp_path / "signals.csv").read_text(encoding="utf-8"),
+            "signals_meta": (tmp_path / "signals.meta.json").read_text(encoding="utf-8"),
+            "signals_parquet": pd.read_parquet(tmp_path / "signals.parquet").to_csv(index=False),
+        }
+        for public_payload in public_payloads.values():
+            assert "private-gateway" not in public_payload
+            assert "topic-classifier-v1" not in public_payload
+            assert "classification.private.test" not in public_payload
+            assert "provider_receipt" not in public_payload
 
     def test_external_topics_use_strict_public_validator(self, monkeypatch):
         for loader_name in (

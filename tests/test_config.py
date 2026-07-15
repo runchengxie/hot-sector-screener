@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from hot_sector_screener.config import default_config, load_config
 
 
@@ -19,12 +21,13 @@ class TestDefaultConfig:
         assert cfg["market"] == "a_share"
         assert cfg["rotation_signal_dir"] is None
 
-    def test_default_llm_config(self):
+    def test_default_llm_config_is_supplier_neutral(self):
         cfg = default_config()
         llm = cfg["llm"]
         assert llm["enabled"] is True
-        assert llm["model"] == "deepseek-reasoner"
-        assert llm["provider"] == "deepseek"
+        assert llm["adapter"] == "chat_completions"
+        assert llm["prompt_template"] == "default"
+        assert set(llm) == {"enabled", "adapter", "prompt_template"}
 
     def test_default_universe_config(self):
         cfg = default_config()
@@ -74,7 +77,26 @@ output:
         assert cfg["llm"]["enabled"] is True
 
     def test_load_nonexistent_raises(self):
-        import pytest
-
         with pytest.raises(FileNotFoundError):
             load_config("/nonexistent/path/config.yml")
+
+    @pytest.mark.parametrize("legacy_field", ["model", "provider"])
+    def test_legacy_runtime_fields_are_explicitly_rejected(self, tmp_path, legacy_field):
+        config_path = tmp_path / "legacy.yml"
+        config_path.write_text(
+            f"llm:\n  enabled: true\n  {legacy_field}: deployment-specific\n",
+            encoding="utf-8",
+        )
+
+        with pytest.raises(ValueError, match=legacy_field):
+            load_config(config_path)
+
+    def test_unknown_adapter_is_rejected(self, tmp_path):
+        config_path = tmp_path / "invalid.yml"
+        config_path.write_text(
+            "llm:\n  adapter: deployment-specific\n",
+            encoding="utf-8",
+        )
+
+        with pytest.raises(ValueError, match=r"llm\.adapter"):
+            load_config(config_path)

@@ -18,8 +18,7 @@ hotspot_sources:
 
 llm:
   enabled: true
-  model: deepseek-reasoner
-  provider: deepseek
+  adapter: chat_completions
   prompt_template: default
 
 universe:
@@ -72,10 +71,27 @@ output:
 
 | 字段 | 默认值 | 说明 |
 |------|--------|------|
-| `enabled` | `true` | 是否调用 LLM。关闭时使用兜底主题提取 |
-| `model` | `deepseek-reasoner` | LLM 模型名称 |
-| `provider` | `deepseek` | LLM 服务商 |
+| `enabled` | `true` | 是否调用远端主题分类；关闭时明确使用确定性主题提取 |
+| `adapter` | `chat_completions` | 供应商中立的 JSON 线协议适配器 |
 | `prompt_template` | `default` | 提示词模板，当前仅支持 default |
+
+远端模式不提供任何内建 endpoint、凭据、模型或供应商默认值，启动前必须显式设置：
+
+| 环境变量 | 说明 |
+|------|------|
+| `LLM_API_URL` | HTTPS API base URL，不得包含凭据、query 或 fragment |
+| `LLM_API_KEY` | 仅用于本次请求的凭据，不写入任何产物 |
+| `LLM_MODEL` | 部署选择的模型标识，仅写入本地内部 lineage |
+| `LLM_PROVIDER_ID` | 部署侧供应商标识，仅写入本地内部 lineage |
+
+四项缺少任意一项，或远端请求、响应 schema、主题观测边界校验失败，`hotsector run`
+都会以非 0 退出，不会静默切换到另一条生成路径。需要确定性主题提取时必须显式传
+`--no-llm`，或在私有运行配置中设置 `enabled: false`。旧的 `llm.model` 和
+`llm.provider` 配置会被明确拒绝，避免看似生效、实际未接线的配置漂移。
+
+远端返回的自由文本在进入候选池前还会执行客户文案泄漏校验：供应商标识、模型标识、
+API host、URL、凭据和系统元数据不得出现在 `topic` 或 `reasoning`。这些运行时信息只
+保留在本地内部 `lineage.json`，不会进入候选池或信号产物。
 
 ### universe（候选池参数）
 

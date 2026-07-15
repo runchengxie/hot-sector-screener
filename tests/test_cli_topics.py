@@ -7,7 +7,10 @@ from unittest.mock import Mock
 import pytest
 
 from hot_sector_screener import cli
-from hot_sector_screener.topic_classifier import TopicValidationError
+from hot_sector_screener.topic_classifier import (
+    TopicClassificationError,
+    TopicValidationError,
+)
 
 
 def test_run_cli_fails_closed_when_loaded_topics_are_rejected(tmp_path, monkeypatch, capsys):
@@ -45,3 +48,83 @@ def test_run_cli_fails_closed_when_loaded_topics_are_rejected(tmp_path, monkeypa
 
     assert exc_info.value.code == 1
     assert "ERROR: invalid topics" in capsys.readouterr().err
+
+
+def test_run_cli_returns_nonzero_when_remote_classification_fails(monkeypatch, capsys):
+    builder = Mock()
+    builder.build_universe.side_effect = TopicClassificationError("provider request failed")
+    monkeypatch.setattr(cli, "_resolve_config", Mock(return_value={}))
+    monkeypatch.setattr(cli, "Screener", Mock(return_value=builder))
+    args = argparse.Namespace(
+        config=None,
+        no_llm=False,
+        max_candidates=None,
+        stocks_per_topic=None,
+        load_topics=None,
+        date="2026-06-19",
+        output_dir=None,
+    )
+
+    with pytest.raises(SystemExit) as exc_info:
+        cli.cmd_run(args)
+
+    assert exc_info.value.code == 1
+    stderr = capsys.readouterr().err
+    assert "ERROR: topic classification failed" in stderr
+    assert "Traceback" not in stderr
+
+
+def test_run_cli_reports_rejected_legacy_config_without_traceback(monkeypatch, capsys):
+    screener_factory = Mock(side_effect=AssertionError("screener must not be constructed"))
+    monkeypatch.setattr(
+        cli,
+        "_resolve_config",
+        Mock(side_effect=ValueError("unsupported llm config fields: model")),
+    )
+    monkeypatch.setattr(cli, "Screener", screener_factory)
+    args = argparse.Namespace(
+        config="legacy.yml",
+        no_llm=False,
+        max_candidates=None,
+        stocks_per_topic=None,
+        load_topics=None,
+        date="2026-06-19",
+        output_dir=None,
+    )
+
+    with pytest.raises(SystemExit) as exc_info:
+        cli.cmd_run(args)
+
+    assert exc_info.value.code == 1
+    assert "ERROR: invalid config" in capsys.readouterr().err
+    screener_factory.assert_not_called()
+
+
+def test_no_llm_cli_override_is_explicitly_deterministic(monkeypatch):
+    config = {"llm": {"enabled": True, "adapter": "chat_completions"}}
+    builder = Mock()
+    builder.build_universe.return_value = {
+        "date": "2026-06-19",
+        "generated_at": "2026-06-19T16:30:00+08:00",
+        "topics": [],
+        "candidate_universe": [],
+        "universe_size": 0,
+        "output_dir": "test-output",
+    }
+    screener_factory = Mock(return_value=builder)
+    monkeypatch.setattr(cli, "_resolve_config", Mock(return_value=config))
+    monkeypatch.setattr(cli, "Screener", screener_factory)
+    args = argparse.Namespace(
+        config=None,
+        no_llm=True,
+        max_candidates=None,
+        stocks_per_topic=None,
+        load_topics=None,
+        date="2026-06-19",
+        output_dir=None,
+    )
+
+    cli.cmd_run(args)
+
+    assert config["llm"]["enabled"] is False
+    screener_factory.assert_called_once_with(config)
