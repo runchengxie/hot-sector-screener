@@ -37,6 +37,74 @@
       "post_observation_reconstruction_not_oos"
     ]
   },
+  "source_mode": "normal",
+  "fallback_reason": null,
+  "source_gate": {
+    "schema_version": "hotsector_source_gate.v1",
+    "observation_date": "20260629",
+    "source_mode": "normal",
+    "fallback_reason": null,
+    "mapping": {
+      "kpl_complete": true,
+      "dc_complete": false
+    },
+    "event_confirmation": {
+      "minimum_required": 2,
+      "available_count": 2,
+      "sources": [
+        "limit_list_ths",
+        "limit_step"
+      ]
+    },
+    "sources": {
+      "kpl_concept_cons": {
+        "available": true,
+        "exact_date": true,
+        "complete": true,
+        "row_count": 500,
+        "invalid_trade_date_rows": 0,
+        "mapping_keys": {
+          "valid": true,
+          "required_columns": [
+            "name",
+            "con_code",
+            "con_name"
+          ],
+          "missing_columns": [],
+          "usable_row_count": 500,
+          "coverage_ratio": 1.0
+        },
+        "observed_trade_dates": [
+          "20260629"
+        ]
+      },
+      "dc_concept_cons": {
+        "available": true,
+        "exact_date": true,
+        "complete": false,
+        "row_count": 3000,
+        "observed_trade_dates": [
+          "20260629"
+        ]
+      },
+      "limit_list_ths": {
+        "available": true,
+        "exact_date": true,
+        "row_count": 60,
+        "observed_trade_dates": [
+          "20260629"
+        ]
+      },
+      "limit_step": {
+        "available": true,
+        "exact_date": true,
+        "row_count": 20,
+        "observed_trade_dates": [
+          "20260629"
+        ]
+      }
+    }
+  },
   "topics": [
     {
       "topic": "半导体国产替代",
@@ -73,6 +141,9 @@
   "data_sources": {
     "dc_concept_available": true,
     "dc_concept_cons_available": true,
+    "kpl_concept_cons_available": true,
+    "limit_list_ths_available": true,
+    "limit_step_available": true,
     "industry_signal_available": false,
     "industry_signal_date": null
   },

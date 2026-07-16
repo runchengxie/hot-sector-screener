@@ -53,6 +53,34 @@
       "candidate_artifact_does_not_establish_out_of_sample_validity"
     ]
   },
+  "source_mode": "normal",
+  "fallback_reason": null,
+  "source_gate": {
+    "schema_version": "hotsector_source_gate.v1",
+    "observation_date": "20260619",
+    "source_mode": "normal",
+    "fallback_reason": null,
+    "mapping": {"kpl_complete": true, "dc_complete": false},
+    "event_confirmation": {
+      "minimum_required": 2,
+      "available_count": 2,
+      "sources": ["limit_list_ths", "limit_step"]
+    },
+    "sources": {
+      "kpl_concept_cons": {
+        "available": true, "exact_date": true, "complete": true,
+        "row_count": 500, "observed_trade_dates": ["20260619"]
+      },
+      "limit_list_ths": {
+        "available": true, "exact_date": true, "row_count": 60,
+        "observed_trade_dates": ["20260619"]
+      },
+      "limit_step": {
+        "available": true, "exact_date": true, "row_count": 20,
+        "observed_trade_dates": ["20260619"]
+      }
+    }
+  },
   "topics": [
     {
       "topic": "AI医疗",
@@ -120,12 +148,32 @@
 | `generated_at` | string | 带 UTC offset 的实际生成时间；同日 EOD 产物应在收盘后生成 |
 | `provenance` | object | 观测日、时区、rotation 的 signal-date-only 证据与 `strict_point_in_time=false` 声明 |
 | `evidence` | object | 生成时序、缺失 receipt 和不构成 OOS 有效性的限制说明 |
+| `source_mode` | string | `normal`、`dc_fallback`、`event_fallback` 或 `blocked` |
+| `fallback_reason` | string/null | normal 为 `null`，其余模式记录稳定原因码 |
+| `source_gate` | object | 精确观测日映射完整性、事件确认源及逐源审计元数据 |
 | `topics` | array | LLM 识别的当日主题空间，每个主题包含名称、权重、来源信号等 |
 | `candidate_universe` | array | 候选股票列表 |
 | `universe_size` | int | 候选池股票数量，通常在 50-100 只之间 |
 | `config_snapshot` | object | 运行时的配置快照 |
 | `data_sources` | object | 各数据源可用性标记 |
 | `quality_report` | object | 生成阶段固定 deferred，不读取未来行情 |
+
+### 生产来源四态门禁
+
+- `normal`：目标日 KPL 成分未触及接口行数上限（或有显式完整性 receipt），且每行
+  `name/con_code/con_name` 映射键完整可用，并有至少两个目标日事件确认源。
+- `dc_fallback`：KPL 不完整或缺失，目标日 DC 题材成分的逐日 manifest 明确
+  `complete=true`，并有至少两个目标日事件确认源。
+- `event_fallback`：完整成员映射不可用，但事件确认源不少于两个；投递端必须明确展示
+  “事件型降级版”，映射阶段不得消费截断的 DC/KPL 成分。
+- `blocked`：事件确认源少于两个，不得进入生产投递。
+
+事件确认源为 `limit_list_ths`、`limit_step`、`limit_cpt_list`、`ths_hot`。
+每个来源的每一行 `trade_date` 必须合法且严格等于 `observation_date`，空值、非法日期或
+D-2 数据均不得冒充 D-1。
+`dc_concept_cons` 仅非空不构成完整性证据；必须读取
+`manifest.completeness.trade_dates[observation_date]` 的逐日 receipt，并校验行数、页数、
+终止页、题材数以及 `coverage.row_coverage_ratio=1.0` 与分区一致。
 
 ### 候选股票字段
 

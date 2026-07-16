@@ -98,7 +98,10 @@ def build_parser() -> argparse.ArgumentParser:
     vo.add_argument(
         "--require-sources",
         default=None,
-        help=("Comma-separated required sources. Default: " + ",".join(DEFAULT_REQUIRED_SOURCES)),
+        help=(
+            "Additional comma-separated fixed sources. Default: capability gate "
+            "(normal/dc_fallback/event_fallback)"
+        ),
     )
     vo.add_argument(
         "--min-candidates",
@@ -432,7 +435,9 @@ def cmd_validate_output(args: argparse.Namespace) -> None:
 
     issues = validate_candidate_output(
         out_dir,
-        required_sources=parse_source_list(args.require_sources),
+        required_sources=(
+            parse_source_list(args.require_sources) if args.require_sources is not None else ()
+        ),
         min_candidates=args.min_candidates,
         require_signals=not bool(args.no_require_signals),
     )

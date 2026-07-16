@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
 import pandas as pd
+import yaml
 
 _A_SHARE_SOURCE_DIRS = {
     "ths_hot": ("assets", "tushare", "a_share", "ths_hot"),
@@ -69,7 +71,11 @@ def _resolve_latest_data_dir(base_dir: Path) -> Path | None:
 
 
 def _load_hive_partitioned(
-    base_dir: Path, trade_date: str, columns: list[str] | None = None
+    base_dir: Path,
+    trade_date: str,
+    columns: list[str] | None = None,
+    *,
+    require_complete_theme_coverage: bool = False,
 ) -> pd.DataFrame:
     """Load one Hive partition from a market-data-platform source directory.
 
@@ -85,9 +91,132 @@ def _load_hive_partitioned(
     if not partition_dir.is_dir():
         return pd.DataFrame()
     try:
-        return pd.read_parquet(partition_dir, columns=columns)
+        frame = pd.read_parquet(partition_dir, columns=columns)
     except Exception:
         return pd.DataFrame()
+    observed_dates: set[str] = set()
+    invalid_trade_date_rows = 0
+    if "trade_date" in frame.columns:
+        normalized_dates = [
+            str(value).strip().replace("-", "")[:8] if pd.notna(value) else ""
+            for value in frame["trade_date"].tolist()
+        ]
+        observed_dates = {value for value in normalized_dates if value}
+        invalid_trade_date_rows = sum(
+            not (len(value) == 8 and value.isdigit()) for value in normalized_dates
+        )
+    frame.attrs.update(
+        {
+            "requested_trade_date": date_clean,
+            "observed_trade_dates": sorted(observed_dates),
+            "invalid_trade_date_rows": invalid_trade_date_rows,
+            "partition_path": str(partition_dir),
+        }
+    )
+    completeness = _partition_completeness(data_dir, date_clean)
+    if completeness is not None:
+        frame.attrs["completeness"] = completeness
+        row_count = completeness.get("row_count")
+        page_count = completeness.get("page_count")
+        terminal = completeness.get("terminal_page_reached")
+        exact_rows = isinstance(row_count, int) and not isinstance(row_count, bool)
+        exact_pages = isinstance(page_count, int) and not isinstance(page_count, bool)
+        coverage_verified = True
+        if require_complete_theme_coverage:
+            coverage = completeness.get("coverage")
+            populated = (
+                coverage.get("populated_row_count") if isinstance(coverage, Mapping) else None
+            )
+            ratio = coverage.get("row_coverage_ratio") if isinstance(coverage, Mapping) else None
+            distinct = completeness.get("distinct_theme_count")
+            themes = (
+                frame["theme_code"].dropna().astype(str).str.strip()
+                if "theme_code" in frame.columns
+                else pd.Series(dtype="object")
+            )
+            themes = themes[themes != ""]
+            coverage_verified = bool(
+                isinstance(coverage, Mapping)
+                and coverage.get("field") == "theme_code"
+                and isinstance(populated, int)
+                and not isinstance(populated, bool)
+                and populated == len(frame)
+                and isinstance(ratio, (int, float))
+                and not isinstance(ratio, bool)
+                and float(ratio) == 1.0
+                and isinstance(distinct, int)
+                and not isinstance(distinct, bool)
+                and distinct == int(themes.nunique())
+                and len(themes) == len(frame)
+            )
+        frame.attrs["completeness_verified"] = bool(
+            completeness.get("complete") is True
+            and exact_rows
+            and row_count == len(frame)
+            and exact_pages
+            and page_count >= 1
+            and terminal is True
+            and observed_dates == {date_clean}
+            and invalid_trade_date_rows == 0
+            and coverage_verified
+        )
+    return frame
+
+
+def _partition_completeness(data_dir: Path, trade_date: str) -> dict[str, Any] | None:
+    """Read an explicit per-date completeness receipt from the sibling manifest."""
+
+    manifest_path = data_dir.parent / "manifest.yml"
+    if not manifest_path.is_file():
+        return None
+    try:
+        payload = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, yaml.YAMLError):
+        return None
+    if not isinstance(payload, Mapping):
+        return None
+    completeness = payload.get("completeness")
+    if isinstance(completeness, Mapping):
+        trade_dates = completeness.get("trade_dates")
+        if isinstance(trade_dates, Mapping):
+            record = trade_dates.get(trade_date)
+            if record is None:
+                record = trade_dates.get(int(trade_date))
+            if isinstance(record, Mapping):
+                return dict(record)
+
+    # Legacy one-page APIs do not yet emit per-date completeness. An empty
+    # refresh is nevertheless an explicit negative receipt and must override a
+    # retained parquet partition from an earlier/partial request.
+    empty_dates = {
+        str(value).strip().replace("-", "")[:8] for value in payload.get("empty_trade_dates", [])
+    }
+    written_dates = {
+        str(value).strip().replace("-", "")[:8] for value in payload.get("written_trade_dates", [])
+    }
+    query = payload.get("query")
+    totals = payload.get("totals")
+    try:
+        empty_count = (
+            int(totals.get("trade_dates_empty") or 0) if isinstance(totals, Mapping) else 0
+        )
+    except (TypeError, ValueError):
+        empty_count = 0
+    queried_only_date = bool(
+        isinstance(query, Mapping)
+        and str(query.get("start_date", "")).replace("-", "") == trade_date
+        and str(query.get("end_date", "")).replace("-", "") == trade_date
+    )
+    legacy_empty = bool(empty_count > 0 and trade_date not in written_dates and queried_only_date)
+    if trade_date in empty_dates or legacy_empty:
+        return {
+            "complete": False,
+            "row_count": 0,
+            "page_count": 0,
+            "terminal_page_reached": False,
+            "reason": "empty_refresh_receipt",
+        }
+    return None
 
 
 def load_ths_hot(trade_date: str, limit: int = 100) -> pd.DataFrame:
@@ -157,6 +286,7 @@ def load_dc_concept_cons(trade_date: str) -> pd.DataFrame:
         cons_dir,
         trade_date,
         columns=["ts_code", "name", "theme_code", "trade_date", "industry", "hot_num"],
+        require_complete_theme_coverage=True,
     )
 
 

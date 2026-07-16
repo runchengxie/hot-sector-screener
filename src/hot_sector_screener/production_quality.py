@@ -7,6 +7,7 @@ from typing import Any
 import pandas as pd
 
 from .candidate_contract import CandidateContractError, validate_candidate_result
+from .source_gate import production_source_issues
 
 DEFAULT_REQUIRED_SOURCES = (
     # Level-1 candidate signals require concept constituents plus same-day
@@ -46,7 +47,7 @@ def _candidate_count(payload: dict[str, Any]) -> int:
 def validate_candidate_output(
     output_dir: str | Path,
     *,
-    required_sources: tuple[str, ...] = DEFAULT_REQUIRED_SOURCES,
+    required_sources: tuple[str, ...] = (),
     min_candidates: int | None = None,
     require_signals: bool = True,
 ) -> list[str]:
@@ -69,6 +70,7 @@ def validate_candidate_output(
 
     data_sources = payload.get("data_sources")
     data_sources = data_sources if isinstance(data_sources, dict) else {}
+    issues.extend(production_source_issues(payload))
     for source in required_sources:
         key = f"{source}_available"
         if data_sources.get(key) is not True:

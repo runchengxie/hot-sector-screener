@@ -32,6 +32,7 @@ from .observation_time import MARKET_TIMEZONE_NAME, resolve_observation_date, sh
 from .paths import ensure_output_dir
 from .ranking import apply_hotspot_feature_overlay
 from .signal_export import write_signal_artifacts
+from .source_gate import build_source_gate
 from .stock_mapper import StockMapper, apply_liquidity_filter
 from .topic_classifier import (
     TopicClassificationError,
@@ -70,10 +71,24 @@ def _with_event_source(df: pd.DataFrame, source: str) -> pd.DataFrame:
     return out
 
 
-def _event_stock_frame(kpl_list: pd.DataFrame, limit_list_ths: pd.DataFrame) -> pd.DataFrame:
+def _ths_event_frame(ths_hot: pd.DataFrame) -> pd.DataFrame:
+    if ths_hot.empty:
+        return ths_hot
+    out = ths_hot.rename(
+        columns={"ts_name": "name", "concept": "theme", "rank_reason": "lu_desc"}
+    ).copy()
+    return _with_event_source(out, "ths_hot")
+
+
+def _event_stock_frame(
+    kpl_list: pd.DataFrame,
+    limit_list_ths: pd.DataFrame,
+    ths_hot: pd.DataFrame,
+) -> pd.DataFrame:
     frames = [
         _with_event_source(kpl_list, "kpl_list"),
         _with_event_source(limit_list_ths, "limit_list_ths"),
+        _ths_event_frame(ths_hot),
     ]
     frames = [frame for frame in frames if not frame.empty]
     if not frames:
@@ -177,13 +192,107 @@ def _contract_evidence(date_int: str, ind_signal: pd.DataFrame) -> dict[str, Any
     }
 
 
-def _data_source_status(frames: dict[str, pd.DataFrame]) -> dict[str, Any]:
+def _data_source_status(
+    frames: dict[str, pd.DataFrame], source_gate: dict[str, Any]
+) -> dict[str, Any]:
     status: dict[str, Any] = {
         f"{source}_available": not frame.empty for source, frame in frames.items()
     }
+    gate_sources = source_gate.get("sources")
+    if isinstance(gate_sources, dict):
+        for source, source_status in gate_sources.items():
+            if not isinstance(source_status, dict):
+                continue
+            status[f"{source}_available"] = source_status.get("available") is True
+            status[f"{source}_exact_date"] = source_status.get("exact_date") is True
+            status[f"{source}_rows"] = int(source_status.get("row_count") or 0)
+            if "complete" in source_status:
+                status[f"{source}_complete"] = source_status.get("complete") is True
     industry_signal = frames["industry_signal"]
     status["industry_signal_date"] = _industry_signal_date(industry_signal)
     return status
+
+
+def _write_universe_output(
+    result: dict[str, Any],
+    *,
+    output_dir: str | None,
+    config: dict[str, Any],
+    topic_classification_lineage: dict[str, Any],
+) -> dict[str, Any]:
+    out_dir = Path(output_dir) if output_dir else ensure_output_dir(result["observation_date"])
+    out_dir.mkdir(parents=True, exist_ok=True)
+    filtered = result["candidate_universe"]
+
+    json_path = out_dir / "candidate_universe.json"
+    with json_path.open("w", encoding="utf-8") as handle:
+        json.dump(result, handle, ensure_ascii=False, indent=2, default=str)
+
+    csv_path = out_dir / "candidate_universe.csv"
+    if filtered:
+        pd.DataFrame(filtered).to_csv(csv_path, index=False)
+
+    quality_path = out_dir / "candidate_quality.json"
+    with quality_path.open("w", encoding="utf-8") as handle:
+        json.dump(result["quality_report"], handle, ensure_ascii=False, indent=2, default=str)
+
+    outcomes_path = out_dir / "candidate_outcomes.json"
+    with outcomes_path.open("w", encoding="utf-8") as handle:
+        json.dump(result["outcome_report"], handle, ensure_ascii=False, indent=2, default=str)
+
+    config_path = out_dir / "run_config.json"
+    with config_path.open("w", encoding="utf-8") as handle:
+        json.dump(config, handle, ensure_ascii=False, indent=2, default=str)
+
+    result["output_dir"] = str(out_dir)
+    signal_files: dict[str, str] = {}
+    output_cfg = config.get("output", {})
+    if output_cfg.get("export_signals", True):
+        signal_files = write_signal_artifacts(
+            result,
+            out_dir,
+            model_version=str(output_cfg.get("signal_model_version", "hotsector-theme-v2")),
+            feature_set_id=str(
+                output_cfg.get("signal_feature_set_id", "topic-concept-hotspot-overlay")
+            ),
+        )
+
+    lineage = {
+        "schema_version": result["schema_version"],
+        "artifact_type": result["artifact_type"],
+        "market": result["market"],
+        "date": result["date"],
+        "observation_date": result["observation_date"],
+        "data_cutoff": result["data_cutoff"],
+        "data_cutoff_semantics": result["data_cutoff_semantics"],
+        "execution_not_before": result["execution_not_before"],
+        "future_data_included": result["future_data_included"],
+        "generated_at": result["generated_at"],
+        "provenance": result["provenance"],
+        "evidence": result["evidence"],
+        "run_config": config_path.name,
+        "data_sources": dict(result["data_sources"]),
+        "source_mode": result["source_mode"],
+        "fallback_reason": result["fallback_reason"],
+        "source_gate": result["source_gate"],
+        "topic_classification": topic_classification_lineage,
+        "topics_count": len(result["topics"]),
+        "universe_size": result["universe_size"],
+        "output_files": {
+            "json": str(json_path),
+            "csv": str(csv_path) if filtered else None,
+            "quality": str(quality_path),
+            "outcomes": str(outcomes_path),
+            "signals": signal_files or None,
+        },
+    }
+    lineage_path = out_dir / "lineage.json"
+    with lineage_path.open("w", encoding="utf-8") as handle:
+        json.dump(lineage, handle, ensure_ascii=False, indent=2)
+
+    if signal_files:
+        result["signal_artifacts"] = signal_files
+    return result
 
 
 class Screener:
@@ -397,10 +506,52 @@ class Screener:
             else pd.DataFrame()
         )
 
+        gate_frames = {
+            "ths_hot": ths,
+            "dc_concept": dc,
+            "dc_concept_cons": dc_cons,
+            "kpl_concept_cons": kpl_cons,
+            "kpl_list": kpl_list,
+            "limit_step": limit_step,
+            "limit_cpt_list": limit_cpt,
+            "limit_list_ths": limit_list_ths,
+        }
+        source_gate = build_source_gate(gate_frames, date_int)
+        gate_statuses = source_gate["sources"]
+        mapping_status = source_gate["mapping"]
+
+        def exact_frame(source: str, frame: pd.DataFrame) -> pd.DataFrame:
+            return frame if gate_statuses[source]["exact_date"] is True else pd.DataFrame()
+
+        exact_ths = exact_frame("ths_hot", ths)
+        exact_kpl_list = exact_frame("kpl_list", kpl_list)
+        exact_limit_step = exact_frame("limit_step", limit_step)
+        exact_limit_cpt = exact_frame("limit_cpt_list", limit_cpt)
+        exact_limit_list_ths = exact_frame("limit_list_ths", limit_list_ths)
+        if source_gate["source_mode"] == "blocked":
+            # Keep research/debug runs inspectable. The production gate rejects
+            # this artifact, so these frames can never reach AI delivery.
+            exact_ths = ths
+            exact_kpl_list = kpl_list
+            exact_limit_step = limit_step
+            exact_limit_cpt = limit_cpt
+            exact_limit_list_ths = limit_list_ths
+            safe_dc_cons = dc_cons
+            safe_kpl_cons = kpl_cons
+            safe_dc_concept = dc
+        else:
+            safe_dc_cons = dc_cons if mapping_status["dc_complete"] is True else pd.DataFrame()
+            safe_kpl_cons = kpl_cons if mapping_status["kpl_complete"] is True else pd.DataFrame()
+            safe_dc_concept = (
+                exact_frame("dc_concept", dc)
+                if source_gate["source_mode"] in {"normal", "dc_fallback"}
+                else pd.DataFrame()
+            )
+
         # 2. Classify topics (or use pre-classified)
-        ths_stocks = _df_to_dicts(ths)
-        dc_list = _df_to_dicts(dc)
-        classifier_concepts = dc_list + _limit_cpt_topic_records(limit_cpt)
+        ths_stocks = _df_to_dicts(exact_ths)
+        dc_list = _df_to_dicts(safe_dc_concept)
+        classifier_concepts = dc_list + _limit_cpt_topic_records(exact_limit_cpt)
         ind_list = _df_to_dicts(ind_signal) if not ind_signal.empty else None
 
         if topics is not None:
@@ -436,12 +587,16 @@ class Screener:
 
         # 3. Map topics → stocks
         mapper = StockMapper(
-            dc_cons,
-            kpl_cons,
-            dc_concept_df=dc,
-            hot_stocks_df=_event_stock_frame(kpl_list, limit_list_ths),
-            limit_step_df=limit_step,
-            limit_cpt_df=limit_cpt,
+            safe_dc_cons,
+            safe_kpl_cons,
+            dc_concept_df=safe_dc_concept,
+            hot_stocks_df=_event_stock_frame(
+                exact_kpl_list,
+                exact_limit_list_ths,
+                exact_ths,
+            ),
+            limit_step_df=exact_limit_step,
+            limit_cpt_df=exact_limit_cpt,
         )
         raw_stocks = mapper.map_topics(
             topics,
@@ -495,6 +650,9 @@ class Screener:
             "execution_not_before": "next_trading_session",
             "future_data_included": False,
             **_contract_evidence(date_int, ind_signal),
+            "source_mode": source_gate["source_mode"],
+            "fallback_reason": source_gate["fallback_reason"],
+            "source_gate": source_gate,
             "topics": topics,
             "candidate_universe": filtered,
             "universe_size": len(filtered),
@@ -513,7 +671,8 @@ class Screener:
                     "daily": daily,
                     "daily_history": daily_history,
                     "industry_signal": ind_signal,
-                }
+                },
+                source_gate,
             ),
             "quality_report": quality_report,
             "outcome_report": outcome_report,
@@ -521,83 +680,9 @@ class Screener:
         result = validate_candidate_result(result)
 
         # 6. Write output
-        out_dir = Path(output_dir) if output_dir else ensure_output_dir(date_int)
-        out_dir.mkdir(parents=True, exist_ok=True)
-
-        # JSON output
-        json_path = out_dir / "candidate_universe.json"
-        with open(json_path, "w", encoding="utf-8") as f:
-            json.dump(result, f, ensure_ascii=False, indent=2, default=str)
-
-        # CSV output (stocks only)
-        csv_path = out_dir / "candidate_universe.csv"
-        if filtered:
-            csv_data = pd.DataFrame(filtered)
-            csv_data.to_csv(csv_path, index=False)
-
-        quality_path = out_dir / "candidate_quality.json"
-        with open(quality_path, "w", encoding="utf-8") as f:
-            json.dump(quality_report, f, ensure_ascii=False, indent=2, default=str)
-
-        outcomes_path = out_dir / "candidate_outcomes.json"
-        with open(outcomes_path, "w", encoding="utf-8") as f:
-            json.dump(outcome_report, f, ensure_ascii=False, indent=2, default=str)
-
-        # Run config
-        config_path = out_dir / "run_config.json"
-        with open(config_path, "w", encoding="utf-8") as f:
-            json.dump(
-                self.config,
-                f,
-                ensure_ascii=False,
-                indent=2,
-                default=str,
-            )
-
-        result["output_dir"] = str(out_dir)
-        signal_files: dict[str, str] = {}
-        output_cfg = self.config.get("output", {})
-        if output_cfg.get("export_signals", True):
-            signal_files = write_signal_artifacts(
-                result,
-                out_dir,
-                model_version=str(output_cfg.get("signal_model_version", "hotsector-theme-v2")),
-                feature_set_id=str(
-                    output_cfg.get("signal_feature_set_id", "topic-concept-hotspot-overlay")
-                ),
-            )
-
-        # Lineage
-        lineage = {
-            "schema_version": result["schema_version"],
-            "artifact_type": result["artifact_type"],
-            "market": result["market"],
-            "date": date_str,
-            "observation_date": date_int,
-            "data_cutoff": date_int,
-            "data_cutoff_semantics": "end_of_day",
-            "execution_not_before": "next_trading_session",
-            "future_data_included": False,
-            "generated_at": result["generated_at"],
-            "provenance": result["provenance"],
-            "evidence": result["evidence"],
-            "run_config": config_path.name,
-            "data_sources": dict(result["data_sources"]),
-            "topic_classification": topic_classification_lineage,
-            "topics_count": len(topics),
-            "universe_size": len(filtered),
-            "output_files": {
-                "json": str(json_path),
-                "csv": str(csv_path) if filtered else None,
-                "quality": str(quality_path),
-                "outcomes": str(outcomes_path),
-                "signals": signal_files or None,
-            },
-        }
-        lineage_path = out_dir / "lineage.json"
-        with open(lineage_path, "w", encoding="utf-8") as f:
-            json.dump(lineage, f, ensure_ascii=False, indent=2)
-
-        if signal_files:
-            result["signal_artifacts"] = signal_files
-        return result
+        return _write_universe_output(
+            result,
+            output_dir=output_dir,
+            config=self.config,
+            topic_classification_lineage=topic_classification_lineage,
+        )

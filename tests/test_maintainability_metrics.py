@@ -59,3 +59,22 @@ def test_maintainability_metrics_ratchet_flag_passes():
         check=False,
     )
     assert result.returncode == 0, f"Ratchet flag failed:\n{result.stderr}"
+
+
+def test_c901_inline_ignore_count_detects_explicit_and_function_noqa():
+    module = _load_metrics_module()
+    source = """
+def explicit(value):  # noqa: C901, PLR0915
+    return value
+
+async def blanket(value):  # noqa
+    return value
+
+def unrelated(value):  # noqa: B008
+    return value
+
+literal = "# noqa: C901"
+# noqa: C901
+"""
+
+    assert module._c901_inline_ignore_count(source) == 3

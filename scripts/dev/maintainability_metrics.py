@@ -11,8 +11,10 @@ from __future__ import annotations
 
 import argparse
 import ast
+import io
 import json
 import sys
+import tokenize
 from collections.abc import Sequence
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -31,6 +33,7 @@ DEFAULT_RATCHET_BUDGETS: dict[str, int] = {
     "functions_over_250": 1,
     "functions_over_500": 0,
     "c901_file_ignores": 0,
+    "c901_inline_ignores": 2,
     "files_over_800": 0,
     "files_over_1200": 0,
     "tests_over_1000": 0,
@@ -66,6 +69,7 @@ class Metrics:
     functions_over_250: int
     functions_over_500: int
     c901_file_ignores: int
+    c901_inline_ignores: int
     files_over_800: int
     files_over_1200: int
     tests_over_1000: int
@@ -168,6 +172,39 @@ def _c901_file_ignore_count(repo_root: Path) -> int:
     return sum(1 for values in per_file.values() if "C901" in values)
 
 
+def _c901_inline_ignore_count(text: str) -> int:
+    try:
+        tree = ast.parse(text)
+    except SyntaxError:
+        return 0
+
+    function_definition_lines = {
+        node.lineno
+        for node in ast.walk(tree)
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+    }
+    comments = (
+        token
+        for token in tokenize.generate_tokens(io.StringIO(text).readline)
+        if token.type == tokenize.COMMENT
+    )
+
+    count = 0
+    for comment in comments:
+        directive = comment.string.removeprefix("#").strip()
+        if directive.casefold() == "noqa" and comment.start[0] in function_definition_lines:
+            count += 1
+            continue
+
+        prefix, separator, codes = directive.partition(":")
+        if prefix.strip().casefold() != "noqa" or not separator:
+            continue
+        normalized_codes = {code.strip().upper() for code in codes.replace(",", " ").split()}
+        if "C901" in normalized_codes:
+            count += 1
+    return count
+
+
 def collect_metrics(
     repo_root: Path,
     roots: Sequence[str] = DEFAULT_ROOTS,
@@ -178,6 +215,7 @@ def collect_metrics(
     function_metrics: list[FunctionMetric] = []
     total_lines = 0
     total_long_lines = 0
+    total_c901_inline_ignores = 0
 
     for path in files:
         text = path.read_text(encoding="utf-8", errors="ignore")
@@ -185,6 +223,7 @@ def collect_metrics(
         long_lines = sum(1 for line in lines if len(line) > 100)
         total_lines += len(lines)
         total_long_lines += long_lines
+        total_c901_inline_ignores += _c901_inline_ignore_count(text)
         file_metrics.append(
             FileMetric(
                 path=_relative_path(repo_root, path),
@@ -206,6 +245,7 @@ def collect_metrics(
         functions_over_250=sum(1 for item in function_metrics if item.lines > 250),
         functions_over_500=sum(1 for item in function_metrics if item.lines > 500),
         c901_file_ignores=_c901_file_ignore_count(repo_root),
+        c901_inline_ignores=total_c901_inline_ignores,
         files_over_800=sum(1 for item in file_metrics if item.lines > 800),
         files_over_1200=sum(1 for item in file_metrics if item.lines > 1200),
         tests_over_1000=sum(
@@ -244,6 +284,7 @@ def format_markdown(metrics: Metrics) -> str:
         f"| Functions over 250 lines | {metrics.functions_over_250} |",
         f"| Functions over 500 lines | {metrics.functions_over_500} |",
         f"| C901 file ignores | {metrics.c901_file_ignores} |",
+        f"| C901 inline ignores | {metrics.c901_inline_ignores} |",
         f"| Files over 800 lines | {metrics.files_over_800} |",
         f"| Files over 1200 lines | {metrics.files_over_1200} |",
         f"| Test files over 1000 lines | {metrics.tests_over_1000} |",
@@ -267,6 +308,7 @@ def format_text(metrics: Metrics) -> str:
         ("functions_over_250", metrics.functions_over_250),
         ("functions_over_500", metrics.functions_over_500),
         ("c901_file_ignores", metrics.c901_file_ignores),
+        ("c901_inline_ignores", metrics.c901_inline_ignores),
         ("files_over_800", metrics.files_over_800),
         ("files_over_1200", metrics.files_over_1200),
         ("tests_over_1000", metrics.tests_over_1000),

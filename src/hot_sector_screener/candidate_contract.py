@@ -11,6 +11,7 @@ from .observation_time import (
     OBSERVATION_COMPLETE_TIME,
     date_key,
 )
+from .source_gate import source_gate_issues
 
 CANDIDATE_SCHEMA_VERSION = "1.0.0"
 CANDIDATE_ARTIFACT_TYPE = "hot_sector_candidate_universe"
@@ -138,6 +139,7 @@ def _candidate_payload_issues(payload: dict[str, Any]) -> list[str]:
         issues.append("data_sources must be an object")
     if not isinstance(payload.get("config_snapshot"), dict):
         issues.append("config_snapshot must be an object")
+    issues.extend(source_gate_issues(payload))
     return issues
 
 
