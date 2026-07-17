@@ -199,6 +199,44 @@ class TestStockMapper:
         assert codes == {"600990.SH", "603137.SH"}
         assert all("今日涨停热度" in s["source_topics"] for s in stocks)
 
+    def test_hot_event_source_concepts_reject_serialized_prose_and_statuses(self):
+        hot_stocks = pd.DataFrame(
+            [
+                {
+                    "ts_code": "000566.SZ",
+                    "name": "海南海药",
+                    "theme": "创投、AI医疗",
+                    "lu_desc": (
+                        '["猴痘概念"],1,2天2板,III期临床正按计划推进,'
+                        '["肝炎概念","不构成投资建议","主要系营业收入"]'
+                    ),
+                    "tag": "1.5、涨停、中报预增",
+                    "event_source": "limit_list_ths",
+                }
+            ]
+        )
+
+        stocks = StockMapper(pd.DataFrame(), hot_stocks_df=hot_stocks).map_topics([])
+
+        assert len(stocks) == 1
+        assert set(stocks[0]["source_concepts"]) == {"创投", "AI医疗", "中报预增"}
+
+    def test_hot_event_valid_json_array_keeps_only_concept_tokens(self):
+        hot_stocks = pd.DataFrame(
+            [
+                {
+                    "ts_code": "603716.SH",
+                    "name": "塞力医疗",
+                    "theme": '["细胞免疫治疗", "创新药", "仅供参考", 1]',
+                    "event_source": "kpl_list",
+                }
+            ]
+        )
+
+        stocks = StockMapper(pd.DataFrame(), hot_stocks_df=hot_stocks).map_topics([])
+
+        assert set(stocks[0]["source_concepts"]) == {"细胞免疫治疗", "创新药"}
+
     def test_alias_concept_maps_to_canonical_constituents(self):
         dc_concepts = pd.DataFrame(
             [

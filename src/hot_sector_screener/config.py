@@ -87,6 +87,19 @@ def load_config(config_path: str | Path) -> dict[str, Any]:
             "hotspot_feature_weight": payload.get("universe", {}).get(
                 "hotspot_feature_weight", 0.25
             ),
+            "daily_confirmation_enabled": payload.get("universe", {}).get(
+                "daily_confirmation_enabled", True
+            ),
+            "daily_confirmation_weight": payload.get("universe", {}).get(
+                "daily_confirmation_weight", 0.20
+            ),
+            "daily_confirmation_lookback": payload.get("universe", {}).get(
+                "daily_confirmation_lookback", 20
+            ),
+            "min_daily_confirmation_score": payload.get("universe", {}).get(
+                "min_daily_confirmation_score"
+            ),
+            "confidence_enabled": payload.get("universe", {}).get("confidence_enabled", True),
         },
         "output": {
             "format": payload.get("output", {}).get("format", "csv"),
@@ -130,6 +143,11 @@ def default_config() -> dict[str, Any]:
             "stocks_per_topic": 25,
             "hotspot_feature_overlay": True,
             "hotspot_feature_weight": 0.25,
+            "daily_confirmation_enabled": True,
+            "daily_confirmation_weight": 0.20,
+            "daily_confirmation_lookback": 20,
+            "min_daily_confirmation_score": None,
+            "confidence_enabled": True,
         },
         "output": {
             "format": "csv",

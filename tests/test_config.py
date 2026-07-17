@@ -40,6 +40,11 @@ class TestDefaultConfig:
         assert uni["stocks_per_topic"] == 25
         assert uni["hotspot_feature_overlay"] is True
         assert uni["hotspot_feature_weight"] == 0.25
+        assert uni["daily_confirmation_enabled"] is True
+        assert uni["daily_confirmation_weight"] == 0.20
+        assert uni["daily_confirmation_lookback"] == 20
+        assert uni["min_daily_confirmation_score"] is None
+        assert uni["confidence_enabled"] is True
         assert cfg["output"]["export_signals"] is True
         assert cfg["output"]["eligible_for_live"] is False
 
@@ -68,6 +73,39 @@ output:
         assert cfg["universe"]["hotspot_feature_overlay"] is True
         assert cfg["output"]["export_signals"] is True
         assert cfg["output"]["eligible_for_live"] is False
+
+    def test_loads_non_default_confirmation_and_confidence_controls(self, tmp_path):
+        config_path = tmp_path / "controls.yml"
+        config_path.write_text(
+            """
+universe:
+  daily_confirmation_enabled: false
+  daily_confirmation_weight: 0.07
+  daily_confirmation_lookback: 37
+  min_daily_confirmation_score: 0.61
+  confidence_enabled: false
+""",
+            encoding="utf-8",
+        )
+
+        config = load_config(config_path)
+        universe = config["universe"]
+
+        assert universe["daily_confirmation_enabled"] is False
+        assert universe["daily_confirmation_weight"] == 0.07
+        assert universe["daily_confirmation_lookback"] == 37
+        assert universe["min_daily_confirmation_score"] == 0.61
+        assert universe["confidence_enabled"] is False
+
+        # The loaded mapping is the object handed to Screener by the CLI.
+        from hot_sector_screener.universe_builder import Screener
+
+        screener = Screener(config)
+        assert screener.daily_confirmation_enabled is False
+        assert screener.daily_confirmation_weight == 0.07
+        assert screener.daily_confirmation_lookback == 37
+        assert screener.min_daily_confirmation_score == 0.61
+        assert screener.confidence_enabled is False
 
     def test_load_empty_yaml(self, tmp_path):
         config_path = tmp_path / "empty.yml"

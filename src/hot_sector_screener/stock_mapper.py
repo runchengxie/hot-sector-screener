@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import math
 import re
 from typing import Any
@@ -7,6 +8,32 @@ from typing import Any
 import pandas as pd
 
 from .concept_registry import canonicalize_concept, expand_concept_terms
+
+_CONCEPT_TOKEN_PATTERN = re.compile(r"^[A-Za-z0-9\u4e00-\u9fff（）()·._ -]+$")
+_NUMERIC_TOKEN_PATTERN = re.compile(r"^[+-]?(?:\d+(?:\.\d+)?|\.\d+)$")
+_EVENT_STATUS_PATTERN = re.compile(
+    r"^(?:首板|涨停|炸板|跌停|一字板|T字板|天地板|地天板|"
+    r"\d+天\d+板|\d+连板|连板\d*)$",
+    re.IGNORECASE,
+)
+_NON_CONCEPT_PHRASES = (
+    "不构成投资建议",
+    "投资建议",
+    "仅供参考",
+    "公告为准",
+    "上市公司公告",
+    "主营业务",
+    "营业收入",
+    "市场份额",
+    "计划推进",
+    "主要受",
+    "主要系",
+    "主要因",
+    "股价异常",
+    "核查确认",
+    "公司",
+    "期临床",
+)
 
 
 def _normalize_ts_code(code: str) -> str:
@@ -36,14 +63,45 @@ def _is_st_name(name: str) -> bool:
     return upper.startswith(("ST", "*ST")) or "退市" in upper
 
 
+def _is_valid_concept_token(value: Any) -> bool:
+    """Accept short market-theme labels and reject prose/status/serialized debris."""
+    token = str(value or "").strip()
+    compact = re.sub(r"\s+", "", token)
+    if not compact or compact.lower() == "nan":
+        return False
+    if len(compact) < 2 or len(compact) > 16:
+        return False
+    if _NUMERIC_TOKEN_PATTERN.fullmatch(compact) or _EVENT_STATUS_PATTERN.fullmatch(compact):
+        return False
+    if any(phrase in compact for phrase in _NON_CONCEPT_PHRASES):
+        return False
+    return _CONCEPT_TOKEN_PATTERN.fullmatch(token) is not None
+
+
 def _split_concept_text(value: Any) -> list[str]:
     if value is None:
         return []
     text = str(value).strip()
     if not text or text.lower() == "nan":
         return []
-    parts = re.split(r"[、,+，/|;；]+", text)
-    return [part.strip() for part in parts if part.strip()]
+
+    # Some upstream event fields contain a JSON array. Parse a valid array as a
+    # structure, but fail closed when bracketed JSON is malformed instead of
+    # leaking fragments such as `[\"猴痘概念\"` into the public contract.
+    if text.startswith("[") or text.endswith("]"):
+        try:
+            decoded = json.loads(text)
+        except (json.JSONDecodeError, TypeError):
+            return []
+        if not isinstance(decoded, list) or any(isinstance(item, (dict, list)) for item in decoded):
+            return []
+        parts = [item.strip() for item in decoded if isinstance(item, str)]
+    elif any(marker in text for marker in "{}[]\"'"):
+        return []
+    else:
+        parts = [part.strip() for part in re.split(r"[、,+，/|;；]+", text)]
+
+    return [part for part in parts if _is_valid_concept_token(part)]
 
 
 class StockMapper:
