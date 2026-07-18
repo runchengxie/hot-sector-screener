@@ -38,8 +38,8 @@ output:
   format: csv
   publish: false
   export_signals: true
-  signal_model_version: hotsector-theme-v2
-  signal_feature_set_id: topic-concept-hotspot-overlay
+  signal_model_version: hotsector-theme-v3
+  signal_feature_set_id: topic-concept-hotspot-overlay-theme-only-v1
   eligible_for_live: false
 
 # Optional: path to rotation-v3 industry-signal output

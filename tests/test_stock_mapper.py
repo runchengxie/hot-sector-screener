@@ -3,6 +3,7 @@ from __future__ import annotations
 import pandas as pd
 import pytest
 
+from hot_sector_screener.confidence import apply_candidate_confidence
 from hot_sector_screener.stock_mapper import StockMapper, apply_liquidity_filter
 
 
@@ -219,7 +220,82 @@ class TestStockMapper:
         stocks = StockMapper(pd.DataFrame(), hot_stocks_df=hot_stocks).map_topics([])
 
         assert len(stocks) == 1
-        assert set(stocks[0]["source_concepts"]) == {"创投", "AI医疗", "中报预增"}
+        assert set(stocks[0]["source_concepts"]) == {"创投", "AI医疗"}
+        assert set(stocks[0]["source_event_tags"]) == {"1.5", "涨停", "中报预增"}
+        assert stocks[0]["source_event_reasons"] == [hot_stocks.loc[0, "lu_desc"]]
+
+    def test_event_metadata_cannot_match_topics_or_change_breadth_and_ranking(self):
+        base_rows = [
+            {
+                "ts_code": "000001.SZ",
+                "name": "甲公司",
+                "theme": "AI医疗",
+                "pct_chg": 5.0,
+                "bid_amount": 1000.0,
+                "event_source": "limit_list_ths",
+            },
+            {
+                "ts_code": "000002.SZ",
+                "name": "乙公司",
+                "theme": "AI医疗",
+                "pct_chg": 4.0,
+                "bid_amount": 900.0,
+                "event_source": "limit_list_ths",
+            },
+        ]
+        clean = pd.DataFrame(base_rows)
+        noisy = pd.DataFrame(
+            [
+                {
+                    **base_rows[0],
+                    "tag": "涨停、中报预增",
+                    "status": "一字板",
+                    "limit_type": "T字板",
+                    "lu_desc": "不构成投资建议，主营业务描述",
+                    "rank_reason": "媒体热议",
+                },
+                {
+                    **base_rows[1],
+                    "tag": "炸板、低开",
+                    "status": "开板",
+                    "limit_type": "跌停",
+                    "lu_desc": "另一段事件说明",
+                    "rank_reason": "情绪降温",
+                },
+            ]
+        )
+        topic = {
+            "topic": "AI医疗",
+            "weight": 1.0,
+            "related_concepts": ["AI医疗"],
+        }
+
+        clean_ranked = StockMapper(pd.DataFrame(), hot_stocks_df=clean).map_topic_to_stocks(topic)
+        noisy_mapper = StockMapper(pd.DataFrame(), hot_stocks_df=noisy)
+        noisy_ranked = noisy_mapper.map_topic_to_stocks(topic)
+
+        assert [
+            (row["ts_code"], row["score"], row["relevance"], row["source_concepts"])
+            for row in noisy_ranked
+        ] == [
+            (row["ts_code"], row["score"], row["relevance"], row["source_concepts"])
+            for row in clean_ranked
+        ]
+        assert (
+            noisy_mapper.map_topic_to_stocks(
+                {"topic": "事件文本", "weight": 1.0, "related_concepts": ["中报预增"]}
+            )
+            == []
+        )
+
+        clean_confidence = apply_candidate_confidence(clean_ranked)
+        noisy_confidence = apply_candidate_confidence(noisy_ranked)
+        assert [row["score"] for row in noisy_confidence] == [
+            row["score"] for row in clean_confidence
+        ]
+        assert [row["confidence_components"]["source_breadth"] for row in noisy_confidence] == [
+            row["confidence_components"]["source_breadth"] for row in clean_confidence
+        ]
 
     def test_hot_event_valid_json_array_keeps_only_concept_tokens(self):
         hot_stocks = pd.DataFrame(

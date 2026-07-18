@@ -37,8 +37,8 @@ output:
   format: csv
   publish: false
   export_signals: true
-  signal_model_version: hotsector-theme-v2
-  signal_feature_set_id: topic-concept-hotspot-overlay
+  signal_model_version: hotsector-theme-v3
+  signal_feature_set_id: topic-concept-hotspot-overlay-theme-only-v1
   eligible_for_live: false
 
 # rotation_signal_dir: /path/to/rotation-v3/run-20260619
@@ -115,6 +115,6 @@ API host、URL、凭据和系统元数据不得出现在 `topic` 或 `reasoning`
 | `format` | `csv` | 输出格式，当前仅支持 csv |
 | `publish` | false | 是否发布到外部系统（预留，当前无效） |
 | `export_signals` | true | 是否输出 research-workspace 标准信号产物 |
-| `signal_model_version` | `hotsector-theme-v2` | 写入信号产物的 `model_version` |
-| `signal_feature_set_id` | `topic-concept-hotspot-overlay` | 写入信号产物的 `feature_set_id` |
+| `signal_model_version` | `hotsector-theme-v3` | 写入信号产物的 `model_version`；v3 对应 candidate v2 的 theme-only 概念边界 |
+| `signal_feature_set_id` | `topic-concept-hotspot-overlay-theme-only-v1` | 写入信号产物的 `feature_set_id` |
 | `eligible_for_live` | false | 固定为 false；本仓只产候选池，下游发布门禁负责晋升 |

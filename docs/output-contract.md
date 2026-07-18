@@ -14,12 +14,29 @@
 
 ## candidate_universe.json
 
-完整输出结果，包含主题空间、候选股票列表以及运行元信息。v1 字段已冻结；可执行的 canonical payload 见 [`examples/candidate_universe.v1.json`](../examples/candidate_universe.v1.json)，并由仓内测试直接调用 producer validator 校验。
+完整输出结果，包含主题空间、候选股票列表以及运行元信息。新产物使用 v2；v1
+字段保持冻结且仍可读取/校验，绝不原地升级或改写历史文件。两个可执行 canonical payload
+分别见 [`candidate_universe.v1.json`](../examples/candidate_universe.v1.json) 和
+[`candidate_universe.v2.json`](../examples/candidate_universe.v2.json)，仓内测试会直接调用
+producer validator 校验。
 
 ```json
 {
-  "schema_version": "1.0.0",
+  "schema_version": "2.0.0",
   "artifact_type": "hot_sector_candidate_universe",
+  "model_identity": {
+    "model_id": "hotsector-theme-v3",
+    "model_version": "3.0.0",
+    "feature_set_id": "topic-concept-hotspot-overlay-theme-only-v1"
+  },
+  "source_concepts_policy": {
+    "policy_id": "hotsector.source_concepts.theme_only",
+    "version": "1.0.0",
+    "allowed": ["theme", "concept", "related_concepts"],
+    "excluded": ["tag", "lu_desc", "status", "rank_reason", "limit_type"],
+    "normalizer_id": "hotsector.concept_token.v1",
+    "canonical_sha256": "d14282e8047367ba61ea762cd3c3de56162329c12f1778c9681246ec7f0f0b40"
+  },
   "market": "CN",
   "date": "2026-06-19",
   "date_int": "20260619",
@@ -102,7 +119,10 @@
       "amount_rank_pct": 93.2,
       "close": 120.5,
       "source_topics": ["CPO光通信"],
-      "source_concepts": ["CPO概念"]
+      "source_concepts": ["CPO概念"],
+      "source_event_tags": ["涨停"],
+      "source_event_statuses": [],
+      "source_event_reasons": ["CPO 板块事件确认"]
     }
   ],
   "universe_size": 1,
@@ -136,8 +156,10 @@
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
-| `schema_version` | string | 固定 `1.0.0`；旧版或缺失版本的产物会被 fail closed 拒绝 |
+| `schema_version` | string | 新产物固定 `2.0.0`；validator 仍可显式读取冻结的 `1.0.0`，其他版本 fail closed |
 | `artifact_type` | string | 固定 `hot_sector_candidate_universe` |
+| `model_identity` | object | v2 固定模型、模型版本和 feature-set identity；消费者不得手抄另一套常量 |
+| `source_concepts_policy` | object | v2 固定概念来源白名单、事件字段排除表、normalizer 和 canonical hash |
 | `market` | string | 固定 `CN` |
 | `date` | string | 交易日（yyyy-MM-dd 格式） |
 | `date_int` | string | 交易日（yyyyMMdd 格式，用于目录路径） |
@@ -189,7 +211,14 @@ D-2 数据均不得冒充 D-1。
 | `amount_rank_pct` | float | 当日成交额在全市场中的百分位 |
 | `close` | float | 当日收盘价，用于价格过滤 |
 | `source_topics` | array | 必填字符串数组；该股票匹配到的主题列表 |
-| `source_concepts` | array | 必填字符串数组；该股票命中的标准化概念 |
+| `source_concepts` | array | 必填字符串数组；仅来自 `theme/concept/related_concepts` 的标准化概念 |
+| `source_event_tags` | array | v2 必填、可为空；事件标签，只作解释，不进入概念匹配或 breadth |
+| `source_event_statuses` | array | v2 必填、可为空；`status/limit_type` 事件状态，只作解释 |
+| `source_event_reasons` | array | v2 必填、可为空；`lu_desc/rank_reason` 事件说明，只作解释 |
+
+`source_concepts_policy.canonical_sha256` 对不含 hash 本身的 policy 对象使用 UTF-8
+canonical JSON（key 排序、无多余空格、`ensure_ascii=false`）计算。v2 validator 要求整个
+policy 和 `model_identity` 与 owner 常量精确一致，因此任何字段漂移都会 fail closed。
 
 ## candidate_universe.csv
 
@@ -228,10 +257,11 @@ research-workspace 可消费的标准信号产物，契约名为 `alpha_research
 | `rank` | int | 当日排名 |
 | `model_version` | string | 信号模型版本 |
 | `feature_set_id` | string | 特征/信号口径 |
-| `eligible_for_backtest` | bool | 当前 v1 候选契约通过后可进入独立回测；不表示已有 OOS 证据 |
+| `eligible_for_backtest` | bool | 候选契约通过后可进入独立回测；不表示已有 OOS 证据 |
 | `eligible_for_live` | bool | 固定为 `false`；下游发布门禁负责晋升 |
 
 会保留部分候选池辅助字段，例如 `name`、`source_topics`、`source_concepts`、
+`source_event_tags`、`source_event_statuses`、`source_event_reasons`、
 `liquidity_score`、`amount_rank_pct`、`hotspot_feature_score`。
 
 ## signals.meta.json
@@ -254,8 +284,10 @@ research-workspace 可消费的标准信号产物，契约名为 `alpha_research
 
 ```json
 {
-  "schema_version": "1.0.0",
+  "schema_version": "2.0.0",
   "artifact_type": "hot_sector_candidate_universe",
+  "model_identity": {"model_id": "hotsector-theme-v3", "model_version": "3.0.0", "feature_set_id": "topic-concept-hotspot-overlay-theme-only-v1"},
+  "source_concepts_policy": {"policy_id": "hotsector.source_concepts.theme_only", "version": "1.0.0", "canonical_sha256": "d14282e8047367ba61ea762cd3c3de56162329c12f1778c9681246ec7f0f0b40"},
   "market": "CN",
   "date": "2026-06-19",
   "observation_date": "20260619",

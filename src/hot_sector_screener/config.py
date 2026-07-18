@@ -5,6 +5,8 @@ from typing import Any
 
 import yaml
 
+from .candidate_contract import CANDIDATE_FEATURE_SET_ID, CANDIDATE_MODEL_ID
+
 _LLM_ALLOWED_FIELDS = frozenset({"enabled", "adapter", "prompt_template"})
 _LLM_ADAPTER = "chat_completions"
 
@@ -106,10 +108,10 @@ def load_config(config_path: str | Path) -> dict[str, Any]:
             "publish": payload.get("output", {}).get("publish", False),
             "export_signals": payload.get("output", {}).get("export_signals", True),
             "signal_model_version": payload.get("output", {}).get(
-                "signal_model_version", "hotsector-theme-v2"
+                "signal_model_version", CANDIDATE_MODEL_ID
             ),
             "signal_feature_set_id": payload.get("output", {}).get(
-                "signal_feature_set_id", "topic-concept-hotspot-overlay"
+                "signal_feature_set_id", CANDIDATE_FEATURE_SET_ID
             ),
             "eligible_for_live": False,
         },
@@ -153,8 +155,8 @@ def default_config() -> dict[str, Any]:
             "format": "csv",
             "publish": False,
             "export_signals": True,
-            "signal_model_version": "hotsector-theme-v2",
-            "signal_feature_set_id": "topic-concept-hotspot-overlay",
+            "signal_model_version": CANDIDATE_MODEL_ID,
+            "signal_feature_set_id": CANDIDATE_FEATURE_SET_ID,
             "eligible_for_live": False,
         },
         "rotation_signal_dir": None,

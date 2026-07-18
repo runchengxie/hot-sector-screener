@@ -41,9 +41,9 @@ quant-execution-engine
 | `signal_backtest` | 回测分，当前使用过滤后的相关性 |
 | `signal_direction` | 多头方向，固定为 `1.0` |
 | `rank` | 当日按 `signal_backtest` 降序排名 |
-| `model_version` | 默认 `hotsector-theme-v2` |
-| `feature_set_id` | 默认 `topic-concept-hotspot-overlay` |
-| `eligible_for_backtest` | 通过 v1 候选结构契约，可进入独立回测；不表示已有 OOS 证据 |
+| `model_version` | 默认 `hotsector-theme-v3` |
+| `feature_set_id` | 默认 `topic-concept-hotspot-overlay-theme-only-v1` |
+| `eligible_for_backtest` | 通过 owner 候选结构契约，可进入独立回测；不表示已有 OOS 证据 |
 | `eligible_for_live` | 固定 `false`；本层产物只能作为研究候选 |
 
 ## 手动运行
@@ -118,7 +118,8 @@ Linux `scripts/setup_cron.sh --layer2` 会安装并启用该 timer。Windows 使
 
 ## 策略口径
 
-`hotsector-theme-v2` 保持确定性主题映射为主，新增派生热点特征叠加：
+`hotsector-theme-v3` 保持确定性主题映射为主，并将概念来源收窄为
+`theme/concept/related_concepts`；事件标签、状态和说明只作为解释元数据。派生热点特征叠加：
 
 1. 主题权重、概念强度、成分热度生成基础分。
 2. `hotspot_features` 里的热榜分位、主题强度、近期涨停/连板、调研和券商推荐等字段生成

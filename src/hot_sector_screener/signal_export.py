@@ -6,7 +6,12 @@ from typing import Any
 
 import pandas as pd
 
-from .candidate_contract import CandidateContractError, validate_candidate_result
+from .candidate_contract import (
+    CANDIDATE_FEATURE_SET_ID,
+    CANDIDATE_MODEL_ID,
+    CandidateContractError,
+    validate_candidate_result,
+)
 from .observation_time import date_key
 
 SIGNAL_SCHEMA_VERSION = 1
@@ -43,8 +48,8 @@ def _as_float(value: Any, default: float = 0.0) -> float:
 def build_signal_frame(
     result: dict[str, Any],
     *,
-    model_version: str = "hotsector-theme-v2",
-    feature_set_id: str = "topic-concept-hotspot-overlay",
+    model_version: str = CANDIDATE_MODEL_ID,
+    feature_set_id: str = CANDIDATE_FEATURE_SET_ID,
 ) -> pd.DataFrame:
     """Convert a candidate universe result into the canonical alpha-research schema."""
     result = validate_candidate_result(result)
@@ -75,6 +80,9 @@ def build_signal_frame(
                 "name": item.get("name", ""),
                 "source_topics": item.get("source_topics", []),
                 "source_concepts": item.get("source_concepts", []),
+                "source_event_tags": item.get("source_event_tags", []),
+                "source_event_statuses": item.get("source_event_statuses", []),
+                "source_event_reasons": item.get("source_event_reasons", []),
                 "liquidity_score": item.get("liquidity_score"),
                 "amount_rank_pct": item.get("amount_rank_pct"),
                 "close": item.get("close"),
@@ -156,6 +164,8 @@ def signal_metadata(
             "config_snapshot": result.get("config_snapshot", {}),
             "candidate_schema_version": result["schema_version"],
             "candidate_artifact_type": result["artifact_type"],
+            "candidate_model_identity": result.get("model_identity"),
+            "source_concepts_policy": result.get("source_concepts_policy"),
             "candidate_provenance": provenance,
             "candidate_evidence": evidence,
         },
@@ -166,8 +176,8 @@ def write_signal_artifacts(
     result: dict[str, Any],
     output_dir: str | Path,
     *,
-    model_version: str = "hotsector-theme-v2",
-    feature_set_id: str = "topic-concept-hotspot-overlay",
+    model_version: str = CANDIDATE_MODEL_ID,
+    feature_set_id: str = CANDIDATE_FEATURE_SET_ID,
 ) -> dict[str, str]:
     result = validate_candidate_result(result)
     output_path = Path(output_dir)

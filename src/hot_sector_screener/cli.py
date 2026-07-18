@@ -8,7 +8,11 @@ from pathlib import Path
 from .backtest.etf_backtest import run_etf_backtest
 from .backtest.etf_ml_backtest import run_etf_ml_backtest
 from .backtest.stock_backtest import run_stock_backtest
-from .candidate_contract import CandidateContractError
+from .candidate_contract import (
+    CANDIDATE_FEATURE_SET_ID,
+    CANDIDATE_MODEL_ID,
+    CandidateContractError,
+)
 from .config import default_config, load_config
 from .data_sources.platform import summarize_data_coverage
 from .observation_time import date_key, resolve_observation_date
@@ -85,8 +89,8 @@ def build_parser() -> argparse.ArgumentParser:
     es.add_argument("--date", default=None, help="Output date to export")
     es.add_argument("--input", default=None, help="candidate_universe.json path")
     es.add_argument("--output-dir", default=None, help="Signal output directory")
-    es.add_argument("--model-version", default="hotsector-theme-v2")
-    es.add_argument("--feature-set-id", default="topic-concept-hotspot-overlay")
+    es.add_argument("--model-version", default=CANDIDATE_MODEL_ID)
+    es.add_argument("--feature-set-id", default=CANDIDATE_FEATURE_SET_ID)
 
     # validate-output — production gate for scheduled handoff jobs
     vo = sub.add_parser(

@@ -2,20 +2,33 @@ from __future__ import annotations
 
 from typing import Any
 
+from hot_sector_screener.candidate_contract import (
+    CANDIDATE_SCHEMA_VERSION_V1,
+    CANDIDATE_SCHEMA_VERSION_V2,
+    candidate_model_identity,
+    source_concepts_policy,
+)
+
 
 def valid_candidate_payload(
     *,
     candidates: list[dict[str, Any]] | None = None,
     data_sources: dict[str, Any] | None = None,
+    schema_version: str = CANDIDATE_SCHEMA_VERSION_V2,
 ) -> dict[str, Any]:
-    universe = candidates or []
+    universe = [dict(candidate) for candidate in candidates or []]
+    if schema_version == CANDIDATE_SCHEMA_VERSION_V2:
+        for candidate in universe:
+            candidate.setdefault("source_event_tags", [])
+            candidate.setdefault("source_event_statuses", [])
+            candidate.setdefault("source_event_reasons", [])
     deferred = {
         "available": False,
         "reason": "future_data_excluded_from_generation",
         "horizons": {},
     }
-    return {
-        "schema_version": "1.0.0",
+    payload = {
+        "schema_version": schema_version,
         "artifact_type": "hot_sector_candidate_universe",
         "market": "CN",
         "date": "2026-06-29",
@@ -59,3 +72,13 @@ def valid_candidate_payload(
         "quality_report": dict(deferred),
         "outcome_report": dict(deferred),
     }
+    if schema_version == CANDIDATE_SCHEMA_VERSION_V2:
+        payload.update(
+            {
+                "model_identity": candidate_model_identity(),
+                "source_concepts_policy": source_concepts_policy(),
+            }
+        )
+    elif schema_version != CANDIDATE_SCHEMA_VERSION_V1:
+        raise ValueError(f"unsupported test schema_version: {schema_version}")
+    return payload

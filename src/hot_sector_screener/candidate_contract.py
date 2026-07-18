@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 import math
 import re
 from datetime import datetime
@@ -13,15 +15,77 @@ from .observation_time import (
 )
 from .source_gate import source_gate_issues
 
-CANDIDATE_SCHEMA_VERSION = "1.0.0"
+CANDIDATE_SCHEMA_VERSION_V1 = "1.0.0"
+CANDIDATE_SCHEMA_VERSION_V2 = "2.0.0"
+CANDIDATE_SCHEMA_VERSION = CANDIDATE_SCHEMA_VERSION_V2
+CANDIDATE_SUPPORTED_SCHEMA_VERSIONS = frozenset(
+    {CANDIDATE_SCHEMA_VERSION_V1, CANDIDATE_SCHEMA_VERSION_V2}
+)
 CANDIDATE_ARTIFACT_TYPE = "hot_sector_candidate_universe"
 CANDIDATE_MARKET = "CN"
+CANDIDATE_MODEL_ID = "hotsector-theme-v3"
+CANDIDATE_MODEL_VERSION = "3.0.0"
+CANDIDATE_FEATURE_SET_ID = "topic-concept-hotspot-overlay-theme-only-v1"
+SOURCE_CONCEPTS_POLICY_ID = "hotsector.source_concepts.theme_only"
+SOURCE_CONCEPTS_POLICY_VERSION = "1.0.0"
+SOURCE_CONCEPTS_NORMALIZER_ID = "hotsector.concept_token.v1"
+SOURCE_CONCEPTS_ALLOWED_FIELDS = ("theme", "concept", "related_concepts")
+SOURCE_CONCEPTS_EXCLUDED_FIELDS = (
+    "tag",
+    "lu_desc",
+    "status",
+    "rank_reason",
+    "limit_type",
+)
 _SYMBOL_PATTERN = re.compile(r"^\d{6}\.(?:SH|SZ|BJ)$")
 _TOPIC_FIELDS = frozenset({"topic", "weight", "reasoning", "related_concepts", "source_signals"})
 
 
 class CandidateContractError(ValueError):
     pass
+
+
+def _canonical_sha256(payload: object) -> str:
+    encoded = json.dumps(
+        payload,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def source_concepts_policy() -> dict[str, Any]:
+    """Return the immutable v2 concept-provenance policy and its canonical hash."""
+    policy: dict[str, Any] = {
+        "policy_id": SOURCE_CONCEPTS_POLICY_ID,
+        "version": SOURCE_CONCEPTS_POLICY_VERSION,
+        "allowed": list(SOURCE_CONCEPTS_ALLOWED_FIELDS),
+        "excluded": list(SOURCE_CONCEPTS_EXCLUDED_FIELDS),
+        "normalizer_id": SOURCE_CONCEPTS_NORMALIZER_ID,
+    }
+    policy["canonical_sha256"] = _canonical_sha256(policy)
+    return policy
+
+
+def candidate_model_identity() -> dict[str, str]:
+    """Return the deterministic v2 feature/model identity."""
+    return {
+        "model_id": CANDIDATE_MODEL_ID,
+        "model_version": CANDIDATE_MODEL_VERSION,
+        "feature_set_id": CANDIDATE_FEATURE_SET_ID,
+    }
+
+
+def candidate_contract_info() -> dict[str, Any]:
+    """Expose owner-generated contract identity for downstream consumers."""
+    return {
+        "artifact_type": CANDIDATE_ARTIFACT_TYPE,
+        "current_schema_version": CANDIDATE_SCHEMA_VERSION,
+        "supported_schema_versions": sorted(CANDIDATE_SUPPORTED_SCHEMA_VERSIONS),
+        "model_identity": candidate_model_identity(),
+        "source_concepts_policy": source_concepts_policy(),
+    }
 
 
 def _generated_at_issue(value: object, observation_date: str) -> str | None:
@@ -61,12 +125,19 @@ def _expected_temporal_context(payload: dict[str, Any]) -> str | None:
 
 def _identity_and_date_issues(payload: dict[str, Any]) -> tuple[list[str], str]:
     issues: list[str] = []
-    if payload.get("schema_version") != CANDIDATE_SCHEMA_VERSION:
-        issues.append(f"schema_version must be {CANDIDATE_SCHEMA_VERSION}")
+    schema_version = payload.get("schema_version")
+    if schema_version not in CANDIDATE_SUPPORTED_SCHEMA_VERSIONS:
+        supported = ", ".join(sorted(CANDIDATE_SUPPORTED_SCHEMA_VERSIONS))
+        issues.append(f"schema_version must be one of: {supported}")
     if payload.get("artifact_type") != CANDIDATE_ARTIFACT_TYPE:
         issues.append(f"artifact_type must be {CANDIDATE_ARTIFACT_TYPE}")
     if payload.get("market") != CANDIDATE_MARKET:
         issues.append(f"market must be {CANDIDATE_MARKET}")
+    if schema_version == CANDIDATE_SCHEMA_VERSION_V2:
+        if payload.get("model_identity") != candidate_model_identity():
+            issues.append("model_identity must match the canonical v2 identity")
+        if payload.get("source_concepts_policy") != source_concepts_policy():
+            issues.append("source_concepts_policy must match the canonical v2 policy")
 
     try:
         observation_date = date_key(payload.get("observation_date"))
@@ -95,6 +166,53 @@ def _identity_and_date_issues(payload: dict[str, Any]) -> tuple[list[str], str]:
     return issues, observation_date
 
 
+def _string_array_issue(candidate: dict[str, Any], index: int, field: str) -> str | None:
+    values = candidate.get(field)
+    if not isinstance(values, list) or not all(
+        isinstance(value, str) and bool(value.strip()) for value in values
+    ):
+        return f"candidate_universe[{index}].{field} must be a string array"
+    return None
+
+
+def _candidate_row_issues(
+    candidate: dict[str, Any],
+    index: int,
+    symbols: set[str],
+    *,
+    schema_version: object,
+) -> list[str]:
+    issues: list[str] = []
+    symbol = str(candidate.get("ts_code", ""))
+    if not _SYMBOL_PATTERN.fullmatch(symbol):
+        issues.append(f"candidate_universe[{index}].ts_code is invalid: {symbol!r}")
+    elif symbol in symbols:
+        issues.append(f"candidate_universe[{index}].ts_code is duplicated: {symbol}")
+    symbols.add(symbol)
+    name = candidate.get("name")
+    if not isinstance(name, str) or not name.strip() or len(name.strip()) > 64:
+        issues.append(f"candidate_universe[{index}].name must be 1-64 characters")
+    if not _is_finite_number(candidate.get("score")):
+        issues.append(f"candidate_universe[{index}].score must be finite")
+    relevance = candidate.get("relevance")
+    if (
+        isinstance(relevance, bool)
+        or not isinstance(relevance, (int, float))
+        or not math.isfinite(float(relevance))
+        or not 0.0 <= float(relevance) <= 1.0
+    ):
+        issues.append(f"candidate_universe[{index}].relevance must be finite in [0, 1]")
+    fields = ["source_topics", "source_concepts"]
+    if schema_version == CANDIDATE_SCHEMA_VERSION_V2:
+        fields.extend(["source_event_tags", "source_event_statuses", "source_event_reasons"])
+    issues.extend(
+        issue
+        for field in fields
+        if (issue := _string_array_issue(candidate, index, field)) is not None
+    )
+    return issues
+
+
 def _candidate_payload_issues(payload: dict[str, Any]) -> list[str]:
     issues: list[str] = []
     candidates = payload.get("candidate_universe")
@@ -106,32 +224,14 @@ def _candidate_payload_issues(payload: dict[str, Any]) -> list[str]:
         if not isinstance(candidate, dict):
             issues.append(f"candidate_universe[{index}] must be an object")
             continue
-        symbol = str(candidate.get("ts_code", ""))
-        if not _SYMBOL_PATTERN.fullmatch(symbol):
-            issues.append(f"candidate_universe[{index}].ts_code is invalid: {symbol!r}")
-        elif symbol in symbols:
-            issues.append(f"candidate_universe[{index}].ts_code is duplicated: {symbol}")
-        symbols.add(symbol)
-        name = candidate.get("name")
-        if not isinstance(name, str) or not name.strip() or len(name.strip()) > 64:
-            issues.append(f"candidate_universe[{index}].name must be 1-64 characters")
-        score = candidate.get("score")
-        if not _is_finite_number(score):
-            issues.append(f"candidate_universe[{index}].score must be finite")
-        relevance = candidate.get("relevance")
-        if (
-            isinstance(relevance, bool)
-            or not isinstance(relevance, (int, float))
-            or not math.isfinite(float(relevance))
-            or not 0.0 <= float(relevance) <= 1.0
-        ):
-            issues.append(f"candidate_universe[{index}].relevance must be finite in [0, 1]")
-        for field in ("source_topics", "source_concepts"):
-            values = candidate.get(field)
-            if not isinstance(values, list) or not all(
-                isinstance(value, str) and bool(value.strip()) for value in values
-            ):
-                issues.append(f"candidate_universe[{index}].{field} must be a string array")
+        issues.extend(
+            _candidate_row_issues(
+                candidate,
+                index,
+                symbols,
+                schema_version=payload.get("schema_version"),
+            )
+        )
     if payload.get("universe_size") != len(candidates):
         issues.append("universe_size must equal candidate_universe length")
     issues.extend(_topic_issues(payload.get("topics")))
@@ -303,7 +403,7 @@ def _deferred_evaluation_issues(payload: dict[str, Any]) -> list[str]:
 
 
 def validate_candidate_result(payload: object) -> dict[str, Any]:
-    """Validate a current-version candidate artifact and fail closed on legacy input."""
+    """Validate a supported v1/v2 artifact and fail closed on unknown input."""
     if not isinstance(payload, dict):
         raise CandidateContractError("candidate artifact root must be an object")
     typed_payload = cast(dict[str, Any], payload)
@@ -317,3 +417,23 @@ def validate_candidate_result(payload: object) -> dict[str, Any]:
     if issues:
         raise CandidateContractError("invalid candidate artifact: " + "; ".join(issues))
     return typed_payload
+
+
+def validate_candidate_result_v1(payload: object) -> dict[str, Any]:
+    """Validate and pin a legacy v1 artifact without upgrading or rewriting it."""
+    result = validate_candidate_result(payload)
+    if result.get("schema_version") != CANDIDATE_SCHEMA_VERSION_V1:
+        raise CandidateContractError(
+            f"invalid candidate artifact: schema_version must be {CANDIDATE_SCHEMA_VERSION_V1}"
+        )
+    return result
+
+
+def validate_candidate_result_v2(payload: object) -> dict[str, Any]:
+    """Validate and pin a candidate v2 artifact for new consumers."""
+    result = validate_candidate_result(payload)
+    if result.get("schema_version") != CANDIDATE_SCHEMA_VERSION_V2:
+        raise CandidateContractError(
+            f"invalid candidate artifact: schema_version must be {CANDIDATE_SCHEMA_VERSION_V2}"
+        )
+    return result

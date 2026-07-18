@@ -8,8 +8,12 @@ import pandas as pd
 
 from .candidate_contract import (
     CANDIDATE_ARTIFACT_TYPE,
+    CANDIDATE_FEATURE_SET_ID,
     CANDIDATE_MARKET,
+    CANDIDATE_MODEL_ID,
     CANDIDATE_SCHEMA_VERSION,
+    candidate_model_identity,
+    source_concepts_policy,
     validate_candidate_result,
 )
 from .confidence import apply_candidate_confidence
@@ -251,15 +255,15 @@ def _write_universe_output(
         signal_files = write_signal_artifacts(
             result,
             out_dir,
-            model_version=str(output_cfg.get("signal_model_version", "hotsector-theme-v2")),
-            feature_set_id=str(
-                output_cfg.get("signal_feature_set_id", "topic-concept-hotspot-overlay")
-            ),
+            model_version=str(output_cfg.get("signal_model_version", CANDIDATE_MODEL_ID)),
+            feature_set_id=str(output_cfg.get("signal_feature_set_id", CANDIDATE_FEATURE_SET_ID)),
         )
 
     lineage = {
         "schema_version": result["schema_version"],
         "artifact_type": result["artifact_type"],
+        "model_identity": result["model_identity"],
+        "source_concepts_policy": result["source_concepts_policy"],
         "market": result["market"],
         "date": result["date"],
         "observation_date": result["observation_date"],
@@ -641,6 +645,8 @@ class Screener:
         result = {
             "schema_version": CANDIDATE_SCHEMA_VERSION,
             "artifact_type": CANDIDATE_ARTIFACT_TYPE,
+            "model_identity": candidate_model_identity(),
+            "source_concepts_policy": source_concepts_policy(),
             "market": CANDIDATE_MARKET,
             "date": date_str,
             "date_int": date_int,

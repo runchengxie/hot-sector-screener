@@ -215,6 +215,12 @@ class TestScreenerBuildUniverse:
             )
 
             assert result["date"] == "2026-06-19"
+            assert result["schema_version"] == "2.0.0"
+            assert result["model_identity"]["model_id"] == "hotsector-theme-v3"
+            assert (
+                result["source_concepts_policy"]["policy_id"]
+                == "hotsector.source_concepts.theme_only"
+            )
             assert result["topics"] == sample_topics
             assert "candidate_universe" in result
             assert "universe_size" in result
@@ -416,6 +422,8 @@ class TestScreenerBuildUniverse:
         assert rows["600990.SH"]["name"] == "四创电子"
         assert all(row["source_topics"] for row in rows.values())
         assert all(isinstance(row["source_concepts"], list) for row in rows.values())
+        assert all(isinstance(row["source_event_tags"], list) for row in rows.values())
+        assert rows["600990.SH"]["source_event_tags"] == ["涨停"]
 
     def test_remote_audit_metadata_is_written_only_to_internal_lineage(
         self,

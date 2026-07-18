@@ -56,6 +56,7 @@ def test_build_signal_frame_uses_canonical_columns_and_rank():
     assert frame["eligible_for_live"].eq(False).all()
     assert frame.loc[0, "daily_confirm_score"] == 0.75
     assert frame.loc[0, "confidence_label"] == "high"
+    assert frame.loc[0, "source_event_tags"] == []
 
 
 def test_write_signal_artifacts_writes_parquet_csv_and_metadata(tmp_path):
@@ -75,6 +76,12 @@ def test_write_signal_artifacts_writes_parquet_csv_and_metadata(tmp_path):
     assert meta["execution_eligible"] is False
     assert meta["evidence"]["out_of_sample_claim"] is False
     assert meta["evidence"]["temporal_context"] == "post_observation_generation"
+    assert meta["source"]["candidate_schema_version"] == "2.0.0"
+    assert meta["source"]["candidate_model_identity"]["model_id"] == "hotsector-theme-v3"
+    assert (
+        meta["source"]["source_concepts_policy"]["policy_id"]
+        == "hotsector.source_concepts.theme_only"
+    )
 
 
 def test_load_candidate_result_rejects_legacy_artifact(tmp_path):
