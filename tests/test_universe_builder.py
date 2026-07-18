@@ -11,6 +11,7 @@ import pytest
 
 from hot_sector_screener import universe_builder
 from hot_sector_screener.candidate_contract import validate_candidate_result
+from hot_sector_screener.holdings_contract import validate_holdings_overlay
 from hot_sector_screener.topic_classifier import TopicValidationError
 from hot_sector_screener.topic_provider import ProviderReceipt, ProviderResponse
 from hot_sector_screener.universe_builder import Screener
@@ -424,6 +425,91 @@ class TestScreenerBuildUniverse:
         assert all(isinstance(row["source_concepts"], list) for row in rows.values())
         assert all(isinstance(row["source_event_tags"], list) for row in rows.values())
         assert rows["600990.SH"]["source_event_tags"] == ["涨停"]
+
+    def test_versioned_holdings_snapshot_writes_separate_overlay(
+        self,
+        monkeypatch,
+        tmp_path,
+    ):
+        _install_contract_path_loaders(monkeypatch)
+        daily = pd.DataFrame(
+            [
+                {
+                    "ts_code": "000002.SZ",
+                    "name": "万科A",
+                    "trade_date": "20260619",
+                    "close": 8.0,
+                    "high": 8.2,
+                    "low": 7.9,
+                    "pct_chg": 0.5,
+                    "amount": 200.0,
+                }
+            ]
+        )
+        history = pd.DataFrame(
+            [
+                {
+                    "ts_code": "000002.SZ",
+                    "trade_date": trade_date,
+                    "close": 8.0 + index * 0.1,
+                    "high": 8.2 + index * 0.1,
+                    "low": 7.9 + index * 0.1,
+                    "pct_chg": 0.5,
+                    "amount": 180.0 + index * 10,
+                }
+                for index, trade_date in enumerate(["20260617", "20260618", "20260619"])
+            ]
+        )
+        history_loader = Mock(return_value=history)
+        monkeypatch.setattr(universe_builder, "load_daily_data", lambda *_: daily.copy())
+        monkeypatch.setattr(universe_builder, "load_daily_history", history_loader)
+        topics = [
+            {
+                "topic": "AI算力",
+                "weight": 0.7,
+                "reasoning": "观测数据主题",
+                "related_concepts": ["AI算力"],
+                "source_signals": ["dc_concept"],
+            }
+        ]
+        snapshot = {
+            "schema_version": "1.0.0",
+            "artifact_type": "hot_sector_holdings_snapshot",
+            "market": "CN",
+            "as_of_date": "20260618",
+            "symbols": ["000002.SZ"],
+        }
+        screener = Screener(
+            {
+                "llm": {"enabled": False},
+                "output": {"export_signals": False},
+                "universe": {"daily_confirmation_enabled": False},
+            }
+        )
+
+        result = screener.build_universe(
+            trade_date="2026-06-19",
+            output_dir=str(tmp_path),
+            topics=topics,
+            holdings_snapshot=snapshot,
+        )
+
+        history_loader.assert_called_once_with("20260619", lookback=20)
+        candidate_payload = json.loads(
+            (tmp_path / "candidate_universe.json").read_text(encoding="utf-8")
+        )
+        assert candidate_payload["schema_version"] == "2.0.0"
+        assert "holdings_overlay" not in candidate_payload
+        assert "holdings_overlay_artifact" not in candidate_payload
+        overlay_path = tmp_path / "holdings_eligibility_overlay.json"
+        overlay = json.loads(overlay_path.read_text(encoding="utf-8"))
+        validate_holdings_overlay(overlay)
+        assert overlay["rows"][0]["ts_code"] == "000002.SZ"
+        assert overlay["rows"][0]["theme_score"] == 0.0
+        assert overlay["rows"][0]["hold_eligible"] is True
+        assert result["holdings_overlay_artifact"] == str(overlay_path)
+        lineage = json.loads((tmp_path / "lineage.json").read_text(encoding="utf-8"))
+        assert lineage["output_files"]["holdings_overlay"] == str(overlay_path)
 
     def test_remote_audit_metadata_is_written_only_to_internal_lineage(
         self,

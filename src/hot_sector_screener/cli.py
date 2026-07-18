@@ -15,6 +15,12 @@ from .candidate_contract import (
 )
 from .config import default_config, load_config
 from .data_sources.platform import summarize_data_coverage
+from .holdings_contract import (
+    HoldingsOverlayContractError,
+    canonical_sha256,
+    load_holdings_snapshot,
+    validate_holdings_overlay,
+)
 from .observation_time import date_key, resolve_observation_date
 from .paths import OUTPUTS_DIR
 from .production_quality import (
@@ -65,6 +71,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--load-topics",
         default=None,
         help="Path to topics JSON file (skip LLM, use pre-classified topics)",
+    )
+    run.add_argument(
+        "--holdings",
+        default=None,
+        help="Versioned holdings snapshot JSON for the daily eligibility overlay",
     )
 
     # universe — list latest or specific output
@@ -117,6 +128,16 @@ def build_parser() -> argparse.ArgumentParser:
         "--no-require-signals",
         action="store_true",
         help="Do not require non-empty signals.parquet/signals.meta.json",
+    )
+
+    holdings_validator = sub.add_parser(
+        "validate-holdings-overlay",
+        help="Validate an owner holdings overlay and print its canonical summary",
+    )
+    holdings_validator.add_argument(
+        "--input",
+        required=True,
+        help="holdings_eligibility_overlay.json path",
     )
 
     # backtest — hotspot-driven strategy backtests
@@ -231,6 +252,21 @@ def cmd_scan(args: argparse.Namespace) -> None:
             )
 
 
+def _load_run_holdings(args: argparse.Namespace) -> dict | None:
+    holdings_path = getattr(args, "holdings", None)
+    if not holdings_path:
+        return None
+    try:
+        observation_date = resolve_observation_date(args.date)
+        return load_holdings_snapshot(
+            holdings_path,
+            observation_date=observation_date,
+        )
+    except (HoldingsOverlayContractError, RuntimeError, ValueError) as exc:
+        print(f"ERROR: invalid holdings snapshot: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+
 def cmd_run(args: argparse.Namespace) -> None:
     """Full pipeline run."""
     try:
@@ -267,17 +303,23 @@ def cmd_run(args: argparse.Namespace) -> None:
             print(f"ERROR: invalid topics JSON: {exc}", file=sys.stderr)
             sys.exit(1)
 
+    holdings_snapshot = _load_run_holdings(args)
+
     try:
         result = builder.build_universe(
             trade_date=args.date,
             output_dir=args.output_dir,
             topics=pre_classified,
+            holdings_snapshot=holdings_snapshot,
         )
     except TopicValidationError as exc:
         print(f"ERROR: invalid topics: {exc}", file=sys.stderr)
         sys.exit(1)
     except TopicClassificationError as exc:
         print(f"ERROR: topic classification failed: {exc}", file=sys.stderr)
+        sys.exit(1)
+    except HoldingsOverlayContractError as exc:
+        print(f"ERROR: holdings overlay failed: {exc}", file=sys.stderr)
         sys.exit(1)
 
     print(f"\n  运行日期: {result['date']}")
@@ -305,6 +347,8 @@ def cmd_run(args: argparse.Namespace) -> None:
         )
 
     print(f"\n  输出目录: {result.get('output_dir', 'N/A')}")
+    if result.get("holdings_overlay_artifact"):
+        print(f"  持仓资格: {result['holdings_overlay_artifact']}")
 
 
 def cmd_universe(args: argparse.Namespace) -> None:
@@ -453,6 +497,46 @@ def cmd_validate_output(args: argparse.Namespace) -> None:
     print(f"  Output quality gate passed: {out_dir}")
 
 
+def cmd_validate_holdings_overlay(args: argparse.Namespace) -> None:
+    """Validate the owner artifact and emit a consumer-safe canonical summary."""
+
+    input_path = Path(args.input).expanduser()
+    try:
+        payload = json.loads(input_path.read_text(encoding="utf-8"))
+        overlay = validate_holdings_overlay(payload)
+    except OSError as exc:
+        print(f"ERROR: cannot read holdings overlay: {exc}", file=sys.stderr)
+        sys.exit(1)
+    except json.JSONDecodeError as exc:
+        print(f"ERROR: invalid holdings overlay JSON: {exc}", file=sys.stderr)
+        sys.exit(1)
+    except HoldingsOverlayContractError as exc:
+        print(f"ERROR: invalid holdings overlay: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+    rows = overlay["rows"]
+    policy = overlay["feature_policy"]
+    summary = {
+        "valid": True,
+        "artifact_type": overlay["artifact_type"],
+        "schema_version": overlay["schema_version"],
+        "policy_id": policy["policy_id"],
+        "policy_version": policy["version"],
+        "policy_sha256": policy["canonical_sha256"],
+        "observation_date": overlay["observation_date"],
+        "candidate_artifact_type": overlay["candidate_artifact_type"],
+        "candidate_schema_version": overlay["candidate_schema_version"],
+        "candidate_payload_sha256": overlay["candidate_payload_sha256"],
+        "row_count": len(rows),
+        "incumbent_count": sum(row["is_current_holding"] is True for row in rows),
+        "current_theme_match_count": sum(row["current_theme_match"] is True for row in rows),
+        "entry_eligible_count": sum(row["entry_eligible"] is True for row in rows),
+        "hold_eligible_count": sum(row["hold_eligible"] is True for row in rows),
+        "canonical_sha256": canonical_sha256(overlay),
+    }
+    print(json.dumps(summary, ensure_ascii=False, sort_keys=True))
+
+
 def _resolve_config(config_arg: str | None) -> dict:
     if config_arg:
         return load_config(config_arg)
@@ -532,6 +616,7 @@ def main() -> None:
         "build-prompt": cmd_build_prompt,
         "export-signals": cmd_export_signals,
         "validate-output": cmd_validate_output,
+        "validate-holdings-overlay": cmd_validate_holdings_overlay,
     }
 
     # backtest has sub-subcommands

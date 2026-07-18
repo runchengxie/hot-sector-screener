@@ -1,6 +1,6 @@
 # 命令详解
 
-命令行入口统一为 `hotsector`，当前支持 7 组子命令。
+命令行入口统一为 `hotsector`，子命令如下。
 
 ## 全局说明
 
@@ -52,6 +52,7 @@ uv run hotsector run --date 2026-06-19
 | `--output-dir path` | 自定义输出目录，默认 `outputs/<YYYYMMDD>` |
 | `--max-candidates N` | 覆盖配置文件中的最大候选股数 |
 | `--stocks-per-topic N` | 覆盖配置文件中每个主题最多选取的股票数 |
+| `--holdings path.json` | 读取严格版本化的当前持仓快照，额外写出每日资格/重评分 companion artifact |
 
 ### 进阶用法示例
 
@@ -78,6 +79,34 @@ uv run hotsector run --date 2026-06-19 --no-llm
 ```bash
 uv run hotsector run --date 2026-06-19 --max-candidates 80 --stocks-per-topic 20
 ```
+
+为滞回研究生成旧持仓的当日资格与重评分特征：
+
+```bash
+uv run hotsector run \
+  --date 2026-06-19 \
+  --holdings examples/holdings_snapshot.v1.json \
+  --no-llm
+```
+
+持仓文件必须精确包含 `schema_version`、`artifact_type`、`market`、`as_of_date`、`symbols`；
+`as_of_date` 不得晚于观测日，代码必须是规范化的 `000001.SZ` / `600000.SH` / `430047.BJ`
+格式。该选项只增加 `holdings_eligibility_overlay.json`，不会修改 candidate v1/v2，也不会
+替下游决定保留、卖出或买入。
+
+## validate-holdings-overlay — 校验持仓资格产物
+
+消费者不需要复制 schema 或 validator。使用 producer 提供的只读命令校验 artifact，并取得
+稳定的 canonical 摘要：
+
+```bash
+uv run hotsector validate-holdings-overlay \
+  --input outputs/20260619/holdings_eligibility_overlay.json
+```
+
+成功时输出单行 JSON，包括 policy ID/version/SHA、观测日、总行数、旧持仓数、主题匹配数、
+entry/hold eligible 数和整个 artifact 的 canonical SHA-256；合同漂移、非法 JSON 或文件缺失
+均以非 0 退出。
 
 ## universe — 查看候选池
 

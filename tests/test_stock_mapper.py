@@ -61,6 +61,29 @@ class TestStockMapper:
         assert "300308.SZ" in codes
         assert "300502.SZ" in codes
 
+    def test_equal_score_constituents_are_stable_before_per_topic_cutoff(self):
+        constituents = pd.DataFrame(
+            [
+                {
+                    "ts_code": f"{number:06d}.SZ",
+                    "name": f"股票{number}",
+                    "theme_code": "POWER",
+                }
+                for number in range(40, 0, -1)
+            ]
+        )
+        concepts = pd.DataFrame([{"name": "电力", "theme_code": "POWER"}])
+        mapper = StockMapper(constituents, dc_concept_df=concepts)
+
+        stocks = mapper.map_topic_to_stocks(
+            {"topic": "电力", "weight": 1.0, "related_concepts": ["电力"]},
+            max_stocks=25,
+        )
+
+        assert [stock["ts_code"] for stock in stocks] == [
+            f"{number:06d}.SZ" for number in range(1, 26)
+        ]
+
     def test_map_multiple_topics(self, sample_dc_cons):
         mapper = StockMapper(sample_dc_cons)
         topics = [
@@ -199,6 +222,48 @@ class TestStockMapper:
         codes = {s["ts_code"] for s in stocks}
         assert codes == {"600990.SH", "603137.SH"}
         assert all("今日涨停热度" in s["source_topics"] for s in stocks)
+
+    def test_equal_hot_seed_scores_use_symbol_before_cutoff(self):
+        hot_stocks = pd.DataFrame(
+            [
+                {
+                    "ts_code": code,
+                    "name": code,
+                    "theme": "电力",
+                    "event_source": "limit_list_ths",
+                }
+                for code in ("000003.SZ", "000001.SZ", "000002.SZ")
+            ]
+        )
+
+        stocks = StockMapper(pd.DataFrame(), hot_stocks_df=hot_stocks).map_topics([], max_total=2)
+
+        assert [stock["ts_code"] for stock in stocks] == ["000001.SZ", "000002.SZ"]
+
+    def test_equal_global_scores_use_symbol_before_total_cutoff(self):
+        constituents = pd.DataFrame(
+            [
+                {"ts_code": "000002.SZ", "name": "乙", "theme_code": "B"},
+                {"ts_code": "000001.SZ", "name": "甲", "theme_code": "A"},
+            ]
+        )
+        concepts = pd.DataFrame(
+            [
+                {"name": "主题B", "theme_code": "B"},
+                {"name": "主题A", "theme_code": "A"},
+            ]
+        )
+        topics = [
+            {"topic": "主题B", "weight": 1.0, "related_concepts": ["主题B"]},
+            {"topic": "主题A", "weight": 1.0, "related_concepts": ["主题A"]},
+        ]
+
+        stocks = StockMapper(constituents, dc_concept_df=concepts).map_topics(
+            topics,
+            max_total=1,
+        )
+
+        assert [stock["ts_code"] for stock in stocks] == ["000001.SZ"]
 
     def test_hot_event_source_concepts_reject_serialized_prose_and_statuses(self):
         hot_stocks = pd.DataFrame(

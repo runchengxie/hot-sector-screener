@@ -72,6 +72,22 @@ def test_v2_policy_hash_uses_canonical_json_without_the_hash_field():
     assert candidate_contract_info()["source_concepts_policy"]["canonical_sha256"] == hash_value
 
 
+def test_contract_info_advertises_overlay_without_changing_candidate_versions():
+    info = candidate_contract_info()
+
+    assert info["current_schema_version"] == CANDIDATE_SCHEMA_VERSION_V2
+    assert info["supported_schema_versions"] == [
+        CANDIDATE_SCHEMA_VERSION_V1,
+        CANDIDATE_SCHEMA_VERSION_V2,
+    ]
+    assert info["holdings_overlay"]["input"]["schema_version"] == "1.0.0"
+    assert info["holdings_overlay"]["output"] == {
+        "artifact_type": "hot_sector_holdings_eligibility_overlay",
+        "schema_version": "1.0.0",
+        "file_name": "holdings_eligibility_overlay.json",
+    }
+
+
 def test_v2_rejects_policy_or_model_identity_drift():
     payload = valid_candidate_payload()
     payload["source_concepts_policy"]["allowed"].append("tag")

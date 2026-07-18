@@ -7,6 +7,7 @@ import re
 from datetime import datetime
 from typing import Any, cast
 
+from .holdings_contract import holdings_overlay_contract_info
 from .observation_time import (
     MARKET_TIMEZONE,
     MARKET_TIMEZONE_NAME,
@@ -85,6 +86,7 @@ def candidate_contract_info() -> dict[str, Any]:
         "supported_schema_versions": sorted(CANDIDATE_SUPPORTED_SCHEMA_VERSIONS),
         "model_identity": candidate_model_identity(),
         "source_concepts_policy": source_concepts_policy(),
+        "holdings_overlay": holdings_overlay_contract_info(),
     }
 
 

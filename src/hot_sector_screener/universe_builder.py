@@ -32,6 +32,11 @@ from .data_sources.platform import (
     load_ths_hot,
 )
 from .data_sources.rotation_signal import load_industry_signal
+from .holdings_contract import (
+    HOLDINGS_OVERLAY_FILE_NAME,
+    validate_holdings_overlay,
+)
+from .holdings_overlay import build_holdings_overlay
 from .observation_time import MARKET_TIMEZONE_NAME, resolve_observation_date, shanghai_now
 from .paths import ensure_output_dir
 from .ranking import apply_hotspot_feature_overlay
@@ -223,6 +228,7 @@ def _write_universe_output(
     output_dir: str | None,
     config: dict[str, Any],
     topic_classification_lineage: dict[str, Any],
+    holdings_overlay: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     out_dir = Path(output_dir) if output_dir else ensure_output_dir(result["observation_date"])
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -231,6 +237,13 @@ def _write_universe_output(
     json_path = out_dir / "candidate_universe.json"
     with json_path.open("w", encoding="utf-8") as handle:
         json.dump(result, handle, ensure_ascii=False, indent=2, default=str)
+
+    holdings_overlay_path: Path | None = None
+    if holdings_overlay is not None:
+        validated_overlay = validate_holdings_overlay(holdings_overlay)
+        holdings_overlay_path = out_dir / HOLDINGS_OVERLAY_FILE_NAME
+        with holdings_overlay_path.open("w", encoding="utf-8") as handle:
+            json.dump(validated_overlay, handle, ensure_ascii=False, indent=2)
 
     csv_path = out_dir / "candidate_universe.csv"
     if filtered:
@@ -288,6 +301,9 @@ def _write_universe_output(
             "quality": str(quality_path),
             "outcomes": str(outcomes_path),
             "signals": signal_files or None,
+            "holdings_overlay": (
+                str(holdings_overlay_path) if holdings_overlay_path is not None else None
+            ),
         },
     }
     lineage_path = out_dir / "lineage.json"
@@ -296,6 +312,8 @@ def _write_universe_output(
 
     if signal_files:
         result["signal_artifacts"] = signal_files
+    if holdings_overlay_path is not None:
+        result["holdings_overlay_artifact"] = str(holdings_overlay_path)
     return result
 
 
@@ -478,6 +496,7 @@ class Screener:
         trade_date: str | None = None,
         output_dir: str | None = None,
         topics: object | None = None,
+        holdings_snapshot: object | None = None,
     ) -> dict[str, Any]:
         """Run the full pipeline: collect → classify → map → output.
 
@@ -506,7 +525,7 @@ class Screener:
                 date_int,
                 lookback=self.daily_confirmation_lookback,
             )
-            if self.daily_confirmation_enabled
+            if self.daily_confirmation_enabled or holdings_snapshot is not None
             else pd.DataFrame()
         )
 
@@ -684,6 +703,21 @@ class Screener:
             "outcome_report": outcome_report,
         }
         result = validate_candidate_result(result)
+        holdings_overlay = (
+            build_holdings_overlay(
+                candidate_result=result,
+                current_theme_candidates=ranked_stocks,
+                holdings_snapshot=holdings_snapshot,
+                daily_df=daily,
+                daily_history=daily_history,
+                min_amount_rank_pct=float(self.min_daily_amount_rank_pct),
+                min_price=float(self.min_price),
+                max_price=float(self.max_price),
+                allow_st=bool(self.max_st_allow),
+            )
+            if holdings_snapshot is not None
+            else None
+        )
 
         # 6. Write output
         return _write_universe_output(
@@ -691,4 +725,5 @@ class Screener:
             output_dir=output_dir,
             config=self.config,
             topic_classification_lineage=topic_classification_lineage,
+            holdings_overlay=holdings_overlay,
         )

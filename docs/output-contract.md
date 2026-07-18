@@ -4,6 +4,7 @@
 
 - `candidate_universe.json`
 - `candidate_universe.csv`
+- `holdings_eligibility_overlay.json`（仅传入 `--holdings` 时）
 - `candidate_quality.json`
 - `candidate_outcomes.json`
 - `signals.parquet`
@@ -219,6 +220,50 @@ D-2 数据均不得冒充 D-1。
 `source_concepts_policy.canonical_sha256` 对不含 hash 本身的 policy 对象使用 UTF-8
 canonical JSON（key 排序、无多余空格、`ensure_ascii=false`）计算。v2 validator 要求整个
 policy 和 `model_identity` 与 owner 常量精确一致，因此任何字段漂移都会 fail closed。
+
+## holdings_eligibility_overlay.json
+
+传入版本化持仓快照时，producer 额外写出独立的 companion artifact；它不会改变冻结的
+candidate v1/v2 schema，也不会把“继续持有/替换谁”的组合决策放进候选生产者。
+输入示例见 [`holdings_snapshot.v1.json`](../examples/holdings_snapshot.v1.json)：
+
+```json
+{
+  "schema_version": "1.0.0",
+  "artifact_type": "hot_sector_holdings_snapshot",
+  "market": "CN",
+  "as_of_date": "20260618",
+  "symbols": ["000001.SZ", "600000.SH"]
+}
+```
+
+输出固定为 `hot_sector_holdings_eligibility_overlay/1.0.0`，使用
+`hotsector.holdings_overlay.daily_rescore/1.0.0` feature policy，并包含基础候选池与声明持仓
+的并集。关键字段语义如下：
+
+| 字段 | 说明 |
+|------|------|
+| `entry_eligible` | 当日仍匹配主题，且通过当日价格、可交易性和入池流动性门槛；不是买入指令 |
+| `hold_eligible` | 当日通过硬性市场门禁，且存在严格截至观测日的技术特征；不是继续持有指令 |
+| `current_theme_match` | 是否仍在本次观测日的主题映射池中 |
+| `theme_score` / `theme_relevance` | 当日主题分；无当日主题匹配时严格为 `0` |
+| `last_theme_seen` / `theme_age` | 当日匹配时分别为观测日和 `0`；无可信主题历史时均为 `null`，不猜测 |
+| `technical_as_of_date` | 技术特征最后日期；历史未精确结束于观测日时为 `null`，所有技术字段同时为 `null` |
+| `amount_rank_pct` / `liquidity_score` | 从观测日全市场 daily cross-section 重新计算，不使用旧候选值 |
+| `*_ineligible_reasons` | 稳定原因码；资格布尔值与原因数组必须一致 |
+
+根级 `eligibility_parameters` 固化本次实际使用的入池成交额分位、价格上下限和 ST 开关；
+feature policy 固定算法语义，参数快照固定某次运行的具体阈值，两者都不能由消费者猜测。
+
+`hold_eligible` 故意不复用新股票的成交额分位准入阈值，从而允许下游研究“买入严格、卖出
+稍宽”的滞回规则；价格越界、ST、一字板、缺少当日行情或缺少当日技术特征仍会 fail closed。
+producer 不输出 Top-N、保留期、最多替换数或权重，这些继续由组合/回测 owner 决定。
+
+主题历史目前没有可校验的逐股 append-only 来源。因此，对于当天已经不匹配主题的旧持仓，
+`last_theme_seen` 和 `theme_age` 明确为 nullable；不能从旧冻结 manifest 猜测或前填。与主候选
+产物一致，overlay 仍标记 `strict_point_in_time=false`，只能用于 research-only 实验。
+跨仓消费者应调用 `hotsector validate-holdings-overlay --input <path>` 复用 owner validator，
+并读取其 canonical 摘要，不应重写 schema 校验或手抄 policy 常量。
 
 ## candidate_universe.csv
 

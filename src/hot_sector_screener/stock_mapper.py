@@ -445,7 +445,10 @@ class StockMapper:
 
         # 2. Sort by relevance and limit. The free-form topic label is display-only;
         # only related concepts that match deterministic concept lookups may map stocks.
-        sorted_candidates = sorted(candidates.items(), key=lambda item: -float(item[1]["score"]))
+        sorted_candidates = sorted(
+            candidates.items(),
+            key=lambda item: (-float(item[1]["score"]), item[0]),
+        )
         max_score = max((float(item["score"]) for item in candidates.values()), default=1.0)
 
         result = []
@@ -473,7 +476,10 @@ class StockMapper:
     def hotspot_seed_candidates(self, max_stocks: int = 50) -> list[dict[str, Any]]:
         if max_stocks <= 0 or not self._hot_seed_scores:
             return []
-        sorted_codes = sorted(self._hot_seed_scores.items(), key=lambda item: -float(item[1]))
+        sorted_codes = sorted(
+            self._hot_seed_scores.items(),
+            key=lambda item: (-float(item[1]), item[0]),
+        )
         max_score = max((float(score) for _, score in sorted_codes), default=1.0)
         result: list[dict[str, Any]] = []
         for code, score in sorted_codes[:max_stocks]:
@@ -555,7 +561,10 @@ class StockMapper:
         for item in seen.values():
             item["relevance"] = round(min(float(item.get("score", 0.0)) / max_score, 1.0), 3)
 
-        sorted_stocks = sorted(seen.values(), key=lambda x: (-x["relevance"], -x["score"]))
+        sorted_stocks = sorted(
+            seen.values(),
+            key=lambda item: (-item["relevance"], -item["score"], item["ts_code"]),
+        )
         return sorted_stocks[:max_total]
 
 

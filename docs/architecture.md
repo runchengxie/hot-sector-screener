@@ -31,6 +31,7 @@ LLM 分析当日热点 → 输出主题空间:
   outputs/<YYYYMMDD>/
   ├── candidate_universe.csv
   ├── candidate_universe.json
+  ├── holdings_eligibility_overlay.json  # 仅显式传入版本化持仓快照时
   ├── signals.parquet
   ├── signals.meta.json
   ├── lineage.json
@@ -45,6 +46,10 @@ LLM 分析当日热点 → 输出主题空间:
 - **数据湖的单向读取。** 从 `DATA_PLATFORM_ROOT` 读数据，不写回数据湖。
 - **所有输出都在本地。** 运行结果写在本仓库的 `outputs/` 目录下，不影响其他系统。
 - **研究交接走文件契约。** `signals.parquet` 是给 research-workspace 的交接层，不从本项目直接 import 研究或回测模块。
+- **持仓 overlay 只生产当日事实。** 显式传入版本化持仓快照后，本仓把旧持仓加入更宽的
+  每日资格池，严格按观测日重算主题、技术与流动性特征；无当日主题匹配时主题分为 0，
+  无可信主题历史时年龄字段为 null，技术/流动性不前填。下游仍独立决定 rank buffer、
+  margin、退出宽限和替换数量。
 
 ## 数据源
 
