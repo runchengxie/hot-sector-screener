@@ -5,9 +5,9 @@
 ## 全局说明
 
 - 所有日期参数支持 `YYYY-MM-DD` 和 `YYYYMMDD` 两种格式。
-- `scan`、`run` 和 `build-prompt` 未指定日期时，解析为关键数据源共同可用的最近已完成观测日；不会使用 `date.today()`。上海时间 16:00 前不能使用当日，显式未来日或无效日会失败。
+- `scan`、`run` 和 `build-prompt` 未指定日期时，解析为关键数据源共同可用的最近已完成观测日。不会使用 `date.today()`。上海时间 16:00 前不能使用当日，显式未来日或无效日会失败。
 - `universe`、`export-signals` 和 `validate-output` 未指定日期时读取最近已有输出目录。
-- `--date` 表示已完成交易日的观测日/EOD 数据截止日，不是执行日；候选最早供下一交易时段使用。
+- `--date` 表示已完成交易日的观测日/EOD 数据截止日，不是执行日。候选最早供下一交易时段使用。
 - 配置参数 `--config` 指向 YAML 配置文件，不传则使用 `configs/default.yml`（如果存在），否则使用内建默认值。
 
 ## info — 查看数据概况
@@ -48,7 +48,7 @@ uv run hotsector run --date 2026-06-19
 | 参数 | 说明 |
 |------|------|
 | `--no-llm` | 显式跳过 LLM 调用，使用数据驱动的确定性主题提取 |
-| `--load-topics path.json` | 加载外部主题文件；仍执行与实时 LLM 相同的严格 schema、观测词表和来源校验 |
+| `--load-topics path.json` | 加载外部主题文件。仍执行与实时 LLM 相同的严格 schema、观测词表和来源校验 |
 | `--output-dir path` | 自定义输出目录，默认 `outputs/<YYYYMMDD>` |
 | `--max-candidates N` | 覆盖配置文件中的最大候选股数 |
 | `--stocks-per-topic N` | 覆盖配置文件中每个主题最多选取的股票数 |
@@ -62,7 +62,7 @@ uv run hotsector run --date 2026-06-19
 uv run hotsector run --date 2026-06-19 --load-topics topics.json
 ```
 
-外部主题只能包含 `topic`、`weight`、`reasoning`、`related_concepts`、`source_signals` 五个字段。关联概念必须来自该观测日输入词表，来源必须在该次观测中真实可用；股票代码、公司名、伪概念或 `model_pick` 一类来源会使命令以非 0 退出。
+外部主题只能包含 `topic`、`weight`、`reasoning`、`related_concepts`、`source_signals` 五个字段。关联概念必须来自该观测日输入词表，来源必须在该次观测中真实可用。股票代码、公司名、伪概念或 `model_pick` 一类来源会使命令以非 0 退出。
 
 显式选择数据驱动的确定性主题提取：
 
@@ -89,7 +89,7 @@ uv run hotsector run \
   --no-llm
 ```
 
-持仓文件必须精确包含 `schema_version`、`artifact_type`、`market`、`as_of_date`、`symbols`；
+持仓文件必须精确包含 `schema_version`、`artifact_type`、`market`、`as_of_date`、`symbols`。
 `as_of_date` 不得晚于观测日，代码必须是规范化的 `000001.SZ` / `600000.SH` / `430047.BJ`
 格式。该选项只增加 `holdings_eligibility_overlay.json`，不会修改 candidate v1/v2，也不会
 替下游决定保留、卖出或买入。
@@ -105,7 +105,7 @@ uv run hotsector validate-holdings-overlay \
 ```
 
 成功时输出单行 JSON，包括 policy ID/version/SHA、观测日、总行数、旧持仓数、主题匹配数、
-entry/hold eligible 数和整个 artifact 的 canonical SHA-256；合同漂移、非法 JSON 或文件缺失
+entry/hold eligible 数和整个 artifact 的 canonical SHA-256。合同漂移、非法 JSON 或文件缺失
 均以非 0 退出。
 
 ## universe — 查看候选池
@@ -124,7 +124,7 @@ uv run hotsector universe --date 2026-06-19 --limit 50  # 显示 50 只
 ## export-signals — 导出标准信号
 
 把 `candidate_universe.json` 转成 research-workspace 可消费的 `signals.parquet`、
-`signals.csv` 和 `signals.meta.json`。`hotsector run` 默认已经自动导出；这个命令用于
+`signals.csv` 和 `signals.meta.json`。`hotsector run` 默认已经自动导出。这个命令用于
 从历史候选池重新生成信号产物。这里导出的始终是候选池研究信号，固定
 `eligible_for_live=false`，不能直接交给执行系统。
 
@@ -165,5 +165,5 @@ uv run hotsector backtest etf
 uv run hotsector backtest etf-ml
 ```
 
-`stock` 用热点概念映射个股并做 1 日持有回测；`etf` 用热点概念映射 ETF 曝光；
+`stock` 用热点概念映射个股并做 1 日持有回测。`etf` 用热点概念映射 ETF 曝光。
 `etf-ml` 在 ETF 曝光基础上加入技术特征和 walk-forward 训练。

@@ -4,12 +4,12 @@
 
 ## 热点追踪策略回测
 
-**入口：** `uv run hotsector backtest stock`
+入口： `uv run hotsector backtest stock`
 
 ### 方法论
 
 1. 每天从同花顺热榜提取排名前 N 只热股，统计这些股票上出现的概念标签频率
-2. 频率最高的 K 个概念作为 "今日热点"
+2. 频率最高的 K 个概念作为 今日热点
 3. 通过开盘啦概念成分表把概念映射到具体股票
 4. 等权买入这些股票，持有 1 天，次日再平衡
 5. 对比沪深 300 基准收益
@@ -55,7 +55,7 @@ DATA_PLATFORM_ROOT=/home/yourname/data/market-data-platform \
 
 ## Hotspot→ETF 轮动回测
 
-**入口：** `uv run hotsector backtest etf`
+入口： `uv run hotsector backtest etf`
 
 ### 方法论
 
@@ -119,7 +119,7 @@ DATA_PLATFORM_ROOT=/home/yourname/data/market-data-platform \
 
 ## ML 增强 ETF 回测
 
-**入口：** `uv run hotsector backtest etf-ml`
+入口： `uv run hotsector backtest etf-ml`
 
 在热点概念 → ETF 曝光的基础上，加入 ETF 技术特征和 walk-forward 训练。
 

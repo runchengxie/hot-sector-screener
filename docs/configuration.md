@@ -51,7 +51,7 @@ output:
 | 字段 | 默认值 | 说明 |
 |------|--------|------|
 | `market` | `a_share` | 市场标识，当前仅支持 A 股 |
-| `rotation_signal_dir` | null | 可选，固定 rotation-v3 run；其中 `signal_date` 仍必须不晚于观测日 |
+| `rotation_signal_dir` | null | 可选，固定 rotation-v3 run。其中 `signal_date` 仍必须不晚于观测日 |
 
 ### hotspot_sources
 
@@ -71,7 +71,7 @@ output:
 
 | 字段 | 默认值 | 说明 |
 |------|--------|------|
-| `enabled` | `true` | 是否调用远端主题分类；关闭时明确使用确定性主题提取 |
+| `enabled` | `true` | 是否调用远端主题分类。关闭时明确使用确定性主题提取 |
 | `adapter` | `chat_completions` | 供应商中立的 JSON 线协议适配器 |
 | `prompt_template` | `default` | 提示词模板，当前仅支持 default |
 
@@ -115,6 +115,6 @@ API host、URL、凭据和系统元数据不得出现在 `topic` 或 `reasoning`
 | `format` | `csv` | 输出格式，当前仅支持 csv |
 | `publish` | false | 是否发布到外部系统（预留，当前无效） |
 | `export_signals` | true | 是否输出 research-workspace 标准信号产物 |
-| `signal_model_version` | `hotsector-theme-v3` | 写入信号产物的 `model_version`；v3 对应 candidate v2 的 theme-only 概念边界 |
+| `signal_model_version` | `hotsector-theme-v3` | 写入信号产物的 `model_version`。v3 对应 candidate v2 的 theme-only 概念边界 |
 | `signal_feature_set_id` | `topic-concept-hotspot-overlay-theme-only-v1` | 写入信号产物的 `feature_set_id` |
-| `eligible_for_live` | false | 固定为 false；本仓只产候选池，下游发布门禁负责晋升 |
+| `eligible_for_live` | false | 固定为 false。本仓只产候选池，下游发布门禁负责晋升 |
