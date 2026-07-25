@@ -166,7 +166,7 @@ producer validator 校验。
 | `date_int` | string | 交易日（yyyyMMdd 格式，用于目录路径） |
 | `observation_date` | string | 观测日，表示本次候选使用的已完成交易日 |
 | `data_cutoff` | string | 所有生成输入不得晚于该日期 |
-| `execution_not_before` | string | 固定 `next_trading_session`，观测日不是执行日 |
+| `execution_not_before` | string | 固定 `next_trading_session`，观测日只作为数据截止日（EOD，end of day） |
 | `future_data_included` | bool | 固定 `false` |
 | `generated_at` | string | 带 UTC offset 的实际生成时间。同日 EOD 产物应在收盘后生成 |
 | `provenance` | object | 观测日、时区、rotation 的 signal-date-only 证据与 `strict_point_in_time=false` 声明 |

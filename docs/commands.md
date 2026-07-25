@@ -7,7 +7,7 @@
 - 所有日期参数支持 `YYYY-MM-DD` 和 `YYYYMMDD` 两种格式。
 - `scan`、`run` 和 `build-prompt` 未指定日期时，解析为关键数据源共同可用的最近已完成观测日。不会使用 `date.today()`。上海时间 16:00 前不能使用当日，显式未来日或无效日会失败。
 - `universe`、`export-signals` 和 `validate-output` 未指定日期时读取最近已有输出目录。
-- `--date` 表示已完成交易日的观测日/EOD 数据截止日，不是执行日。候选最早供下一交易时段使用。
+- `--date` 表示已完成交易日的观测日/数据截止日（EOD，end of day），只作为数据截止日。候选最早供下一交易时段使用。
 - 配置参数 `--config` 指向 YAML 配置文件，不传则使用 `configs/default.yml`（如果存在），否则使用内建默认值。
 
 ## info — 查看数据概况
