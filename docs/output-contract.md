@@ -373,7 +373,7 @@ research-workspace 可消费的标准信号产物，契约名为 `alpha_research
 ```
 
 `topic_classification` 是本地内部审计字段，不进入 `candidate_universe.json`、信号文件或
-客户展示。远端模式记录部署侧供应商标识、模型、API host、完整无凭据请求语义的
+客户展示。远端模式记录部署侧数据提供方（provider）标识、模型、API host、完整无凭据请求语义的
 `prompt_sha256`（system/user messages、temperature、max tokens 和 model）以及响应 hash，
 但绝不记录 API key。显式 `--no-llm` 或 `llm.enabled: false` 时记录
 `mode: deterministic`，`--load-topics` 时记录 `mode: external_topics`。
