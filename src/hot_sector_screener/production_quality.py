@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-import pandas as pd
+import pyarrow.parquet as pq
 
 from .candidate_contract import CandidateContractError, validate_candidate_result
 from .source_gate import production_source_issues
@@ -91,11 +91,17 @@ def validate_candidate_output(
             issues.append(f"missing signals.parquet: {signals_path}")
         else:
             try:
-                signals = pd.read_parquet(signals_path)
+                # Read only the parquet metadata to decide emptiness. Using
+                # pandas.read_parquet here spins up the PyArrow dataset scanner,
+                # whose background threads can SIGABRT during interpreter
+                # shutdown (e.g. in the DailyWatch20 fallback path) in a way
+                # that no Python except can catch. Metadata-only access avoids
+                # that scanner entirely.
+                num_rows = pq.ParquetFile(signals_path).metadata.num_rows
             except Exception as exc:
                 issues.append(f"unreadable signals.parquet: {exc}")
             else:
-                if signals.empty:
+                if num_rows == 0:
                     issues.append("signals.parquet is empty")
 
         meta_path = out_dir / "signals.meta.json"

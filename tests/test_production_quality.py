@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import json
+import subprocess
+import sys
+from pathlib import Path
 from typing import Any
 
 import pandas as pd
@@ -183,3 +186,48 @@ def test_capability_gate_rejects_blocked_mode(tmp_path):
     issues = validate_candidate_output(tmp_path)
 
     assert "source capability gate blocked: insufficient_same_day_event_sources" in issues
+
+
+def test_validate_empty_signals_does_not_sigabrt_on_shutdown(tmp_path):
+    """Regression for the 2026-07-27 DailyWatch20 fallback core dump.
+
+    The fallback path used pandas.read_parquet, which spins up the PyArrow
+    dataset scanner. Its background threads can SIGABRT during interpreter
+    shutdown -- a signal no Python except can catch, killing the whole
+    fallback send. Reading only parquet metadata must avoid that, so the
+    child process must exit cleanly (not via signal 6) while still reporting
+    the empty-signals issue.
+    """
+    import os
+
+    factory_path = repr(str(_candidate_factory_path()))
+    script = (
+        "import json, sys\n"
+        "from pathlib import Path\n"
+        "import pandas as pd\n"
+        "sys.path.insert(0, " + factory_path + ")\n"
+        "from candidate_factory import valid_candidate_payload\n"
+        "from hot_sector_screener.production_quality import validate_candidate_output\n"
+        "out = Path(" + repr(str(tmp_path)) + ")\n"
+        "payload = valid_candidate_payload(candidates=[])\n"
+        "text = json.dumps(payload, ensure_ascii=False)\n"
+        "out.joinpath('candidate_universe.json').write_text(text, encoding='utf-8')\n"
+        "pd.DataFrame({'signal_date': []}).to_parquet(out / 'signals.parquet', index=False)\n"
+        "issues = validate_candidate_output(out)\n"
+        "print('ISSUES:' + '|'.join(issues))\n"
+        "sys.exit(0)\n"
+    )
+    proc = subprocess.run(
+        [sys.executable, "-c", script],
+        cwd=os.getcwd(),
+        capture_output=True,
+        text=True,
+    )
+    assert proc.returncode == 0, (
+        f"child aborted (returncode={proc.returncode}); stderr={proc.stderr}"
+    )
+    assert "signals.parquet is empty" in proc.stdout
+
+
+def _candidate_factory_path() -> Path:
+    return Path(__file__).resolve().parent
