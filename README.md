@@ -45,8 +45,12 @@ uv run hotsector run --date 2026-06-19
 uv run hotsector universe --date 2026-06-19
 ```
 
-本机日更入口为顶层 `scripts/hotsector_research_handoff.sh`。默认只生成候选池和
-`signals.parquet`，不运行 research-workspace，也不导出执行目标。质量门失败时返回非 0。
+该交接脚本（`scripts/hotsector_research_handoff.sh`）已移除。当前日更流水线通过
+`hotsector` 命令行入口触发：先跑 `uv run hotsector run --date <YYYYMMDD>` 生成候选池与
+`signals.parquet`，再用 `uv run hotsector export-signals --date <YYYYMMDD>` 导出标准信号产物，
+最后用 `uv run hotsector validate-output --date <YYYYMMDD>` 做生产质量门校验。质量门失败时命令
+返回非 0，避免把空产物当作每日建议。跨仓库调度由 `market-intel` 主仓统一编排，本仓不再内置
+定时脚本或 systemd unit。
 
 ## 输出文件
 

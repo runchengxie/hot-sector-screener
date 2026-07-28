@@ -59,62 +59,50 @@ uv run hotsector export-signals --date 2026-06-29
 
 ## 跨项目调度
 
-顶层脚本：
+该交接脚本（`scripts/hotsector_research_handoff.sh`）已移除。当前跨项目调度由 `market-intel`
+主仓统一编排，本仓只通过 `hotsector` 命令行入口产出第一级日更产物。
+
+生成候选池与标准信号（第一级日更产物）：
 
 ```bash
-cd ~/code/market-intel
-TRADE_DATE=20260629 scripts/hotsector_research_handoff.sh
+cd ~/code/market-intel/hot-sector-screener
+uv run hotsector run --date 2026-06-29 --no-llm
+uv run hotsector export-signals --date 2026-06-29
 ```
 
-默认只生成候选池和标准信号，也就是第一级日更产物：
+第一级产物为：
 
 ```text
 candidate_universe.json + candidate_universe.csv + signals.parquet
 ```
 
-这一级不会运行 `research-workspace`，也不会导出执行目标：
+这一级不会运行 `research-workspace`，也不会导出执行目标。
 
-```bash
-RUN_RESEARCH=0
-EXPORT_TARGETS=0
-```
-
-脚本未传 `TRADE_DATE` 时，会用 `hotsector latest-date` 选择关键热点/概念源共同可用的最近交易日。
+未指定日期时，可用 `hotsector latest-date` 选择关键热点/概念源共同可用的最近交易日。
 随后执行 `hotsector validate-output`，要求关键源可用、候选数量达到 `min_candidates`、
 并且 `signals.parquet` 非空。`daily` 只读取观测日及此前数据，用于流动性过滤和技术确认。
 第一级生成路径不会读取未来行情，`candidate_quality.json` 和 `candidate_outcomes.json`
-只写 deferred stub。事后评价由独立研究流程完成。质量门失败时脚本返回非 0，避免把空文件当作每日建议。
+只写 deferred stub。事后评价由独立研究流程完成。质量门失败时命令返回非 0，避免把空文件当作每日建议。
 
-要继续触发 `strategy-pipeline`，显式打开：
+要继续触发 `strategy-pipeline`，把本次 `signals.parquet` 文件路径指给 `strategy-pipeline`
+的 `hotsector_overlay` preset 读取。需要继续导出执行目标时，由下游流程消费该信号产物：
 
 ```bash
-RUN_RESEARCH=1 \
+HOTSECTOR_SIGNAL_FILE=outputs/2026-06-29/signals.parquet \
 STRATEGY_CONFIG=hotsector_overlay \
-TRADE_DATE=20260629 \
-scripts/hotsector_research_handoff.sh
+uv run -p research-workspace strategy-pipeline run
 ```
 
-脚本会把 `HOTSECTOR_SIGNAL_FILE` 指向本次 `signals.parquet`，供
-`strategy-pipeline` 的 `hotsector_overlay` preset 读取。需要继续导出执行目标时：
+## 定时调度说明
 
-```bash
-RUN_RESEARCH=1 \
-EXPORT_TARGETS=1 \
-TARGETS_OUT=outputs/20260629/targets.json \
-TRADE_DATE=20260629 \
-scripts/hotsector_research_handoff.sh
-```
-
-## systemd 示例
-
-示例 unit 位于：
-
-- `scripts/systemd/hotsector-research-handoff.service`
-- `scripts/systemd/hotsector-research-handoff.timer`
-
-默认 `RUN_RESEARCH=0`、`EXPORT_TARGETS=0`，也就是只生成候选池和信号，不自动跑研究或导出执行目标。
-Linux `scripts/setup_cron.sh --layer2` 会安装并启用该 timer。Windows 使用
-`scripts/windows/install_scheduled_tasks.ps1 -Force` 注册 `Market Intel Hotsector Signals`。
+本仓原先提供的 `scripts/systemd/hotsector-research-handoff.service`、
+`scripts/systemd/hotsector-research-handoff.timer`、`scripts/setup_cron.sh`、
+`scripts/windows/install_scheduled_tasks.ps1` 均已移除，不再内置定时调度。
+当前日更任务由 `market-intel` 主仓统一调度，通过上文的 `hotsector run`、
+`hotsector export-signals`、`hotsector validate-output` 三个命令行入口触发，
+默认只生成候选池和信号，不自动跑研究或导出执行目标。如需在本机自管定时任务，
+可在调度器（systemd timer、cron 或 Windows 任务计划程序）里直接调用上述 `uv run hotsector ...`
+命令，无需本仓额外脚本。
 
 ## 策略口径
 
