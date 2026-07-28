@@ -6,16 +6,7 @@ from typing import Any
 
 import pandas as pd
 
-from .candidate_contract import (
-    CANDIDATE_ARTIFACT_TYPE,
-    CANDIDATE_FEATURE_SET_ID,
-    CANDIDATE_MARKET,
-    CANDIDATE_MODEL_ID,
-    CANDIDATE_SCHEMA_VERSION,
-    candidate_model_identity,
-    source_concepts_policy,
-    validate_candidate_result,
-)
+from .candidate_contract import CANDIDATE_FEATURE_SET_ID, CANDIDATE_MODEL_ID
 from .confidence import apply_candidate_confidence
 from .config import normalize_llm_config
 from .daily_confirmation import apply_daily_confirmation_overlay, load_daily_history
@@ -505,7 +496,104 @@ class Screener:
         date_int = resolve_observation_date(trade_date)
         date_str = f"{date_int[:4]}-{date_int[4:6]}-{date_int[6:]}"
 
-        # 1. Collect data
+        frames = self._collect_pipeline_frames(date_int, date_str, holdings_snapshot)
+        topics, topic_classification_lineage = self._classify_or_reuse_topics(
+            topics, frames, date_str
+        )
+
+        mapper = StockMapper(
+            frames["safe_dc_cons"],
+            frames["safe_kpl_cons"],
+            dc_concept_df=frames["safe_dc_concept"],
+            hot_stocks_df=_event_stock_frame(
+                frames["exact_kpl_list"],
+                frames["exact_limit_list_ths"],
+                frames["exact_ths"],
+            ),
+            limit_step_df=frames["exact_limit_step"],
+            limit_cpt_df=frames["exact_limit_cpt"],
+        )
+        raw_stocks = mapper.map_topics(
+            topics,
+            max_stocks_per_topic=self.stocks_per_topic,
+            max_total=self.max_candidates,
+        )
+        ranked_stocks = (
+            apply_hotspot_feature_overlay(
+                raw_stocks,
+                frames["hf"],
+                weight=self.hotspot_feature_weight,
+            )
+            if self.hotspot_feature_overlay
+            else raw_stocks
+        )
+        confirmed_stocks = (
+            apply_daily_confirmation_overlay(
+                ranked_stocks,
+                frames["daily_history"],
+                weight=self.daily_confirmation_weight,
+                min_score=self.min_daily_confirmation_score,
+            )
+            if self.daily_confirmation_enabled
+            else ranked_stocks
+        )
+
+        filtered = apply_liquidity_filter(
+            confirmed_stocks,
+            daily_df=frames["daily"],
+            min_amount_rank_pct=self.min_daily_amount_rank_pct,
+            max_price=self.max_price,
+            min_price=self.min_price,
+            allow_st=self.max_st_allow,
+        )
+        if self.confidence_enabled:
+            filtered = apply_candidate_confidence(filtered)
+
+        result = self._build_result_payload(
+            date_int,
+            date_str,
+            frames,
+            topics,
+            filtered,
+            ranked_stocks,
+            topic_classification_lineage,
+        )
+        holdings_overlay = (
+            build_holdings_overlay(
+                candidate_result=result,
+                current_theme_candidates=ranked_stocks,
+                holdings_snapshot=holdings_snapshot,
+                daily_df=frames["daily"],
+                daily_history=frames["daily_history"],
+                min_amount_rank_pct=float(self.min_daily_amount_rank_pct),
+                min_price=float(self.min_price),
+                max_price=float(self.max_price),
+                allow_st=bool(self.max_st_allow),
+            )
+            if holdings_snapshot is not None
+            else None
+        )
+
+        return _write_universe_output(
+            result,
+            output_dir=output_dir,
+            config=self.config,
+            topic_classification_lineage=topic_classification_lineage,
+            holdings_overlay=holdings_overlay,
+        )
+
+    def _collect_pipeline_frames(
+        self,
+        date_int: str,
+        date_str: str,
+        holdings_snapshot: object | None,
+    ) -> dict[str, Any]:
+        """Load all source frames, build the source gate, and resolve the
+        exact/blocked-mode frame variants used downstream.
+
+        Returns a dict with raw frames, the source gate, and the resolved
+        `exact_*` / `safe_*` frame variants.
+        """
         ths = load_ths_hot(date_str)
         dc = load_dc_concept(date_str)
         dc_cons = load_dc_concept_cons(date_str)
@@ -571,11 +659,43 @@ class Screener:
                 else pd.DataFrame()
             )
 
-        # 2. Classify topics (or use pre-classified)
-        ths_stocks = _df_to_dicts(exact_ths)
-        dc_list = _df_to_dicts(safe_dc_concept)
-        classifier_concepts = dc_list + _limit_cpt_topic_records(exact_limit_cpt)
-        ind_list = _df_to_dicts(ind_signal) if not ind_signal.empty else None
+        return {
+            "ths": ths,
+            "dc": dc,
+            "dc_cons": dc_cons,
+            "kpl_cons": kpl_cons,
+            "kpl_list": kpl_list,
+            "limit_step": limit_step,
+            "limit_cpt": limit_cpt,
+            "limit_list_ths": limit_list_ths,
+            "hf": hf,
+            "ind_signal": ind_signal,
+            "daily": daily,
+            "daily_history": daily_history,
+            "source_gate": source_gate,
+            "exact_ths": exact_ths,
+            "exact_kpl_list": exact_kpl_list,
+            "exact_limit_step": exact_limit_step,
+            "exact_limit_cpt": exact_limit_cpt,
+            "exact_limit_list_ths": exact_limit_list_ths,
+            "safe_dc_cons": safe_dc_cons,
+            "safe_kpl_cons": safe_kpl_cons,
+            "safe_dc_concept": safe_dc_concept,
+        }
+
+    def _classify_or_reuse_topics(
+        self,
+        topics: object | None,
+        frames: dict[str, Any],
+        date_str: str,
+    ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+        """Validate external topics or run LLM classification, returning the
+        resolved topics and their classification lineage.
+        """
+        ths_stocks = _df_to_dicts(frames["exact_ths"])
+        dc_list = _df_to_dicts(frames["safe_dc_concept"])
+        classifier_concepts = dc_list + _limit_cpt_topic_records(frames["exact_limit_cpt"])
+        ind_list = _df_to_dicts(frames["ind_signal"]) if not frames["ind_signal"].empty else None
 
         if topics is not None:
             topics = validate_and_sanitize_topics(
@@ -608,122 +728,30 @@ class Screener:
                     "provider_receipt": receipt.to_lineage(),
                 }
 
-        # 3. Map topics → stocks
-        mapper = StockMapper(
-            safe_dc_cons,
-            safe_kpl_cons,
-            dc_concept_df=safe_dc_concept,
-            hot_stocks_df=_event_stock_frame(
-                exact_kpl_list,
-                exact_limit_list_ths,
-                exact_ths,
-            ),
-            limit_step_df=exact_limit_step,
-            limit_cpt_df=exact_limit_cpt,
-        )
-        raw_stocks = mapper.map_topics(
-            topics,
-            max_stocks_per_topic=self.stocks_per_topic,
-            max_total=self.max_candidates,
-        )
-        ranked_stocks = (
-            apply_hotspot_feature_overlay(
-                raw_stocks,
-                hf,
-                weight=self.hotspot_feature_weight,
-            )
-            if self.hotspot_feature_overlay
-            else raw_stocks
-        )
-        confirmed_stocks = (
-            apply_daily_confirmation_overlay(
-                ranked_stocks,
-                daily_history,
-                weight=self.daily_confirmation_weight,
-                min_score=self.min_daily_confirmation_score,
-            )
-            if self.daily_confirmation_enabled
-            else ranked_stocks
-        )
+        return topics, topic_classification_lineage
 
-        # 4. Apply filters
-        filtered = apply_liquidity_filter(
-            confirmed_stocks,
-            daily_df=daily,
-            min_amount_rank_pct=self.min_daily_amount_rank_pct,
-            max_price=self.max_price,
-            min_price=self.min_price,
-            allow_st=self.max_st_allow,
-        )
-        if self.confidence_enabled:
-            filtered = apply_candidate_confidence(filtered)
-        quality_report = _deferred_evaluation_report()
-        outcome_report = _deferred_evaluation_report()
+    def _build_result_payload(
+        self,
+        date_int: str,
+        date_str: str,
+        frames: dict[str, Any],
+        topics: object,
+        filtered: list[dict[str, Any]],
+        ranked_stocks: list[dict[str, Any]],
+        topic_classification_lineage: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Assemble the candidate-result dict and validate it against the
+        candidate contract. Delegated to a small helper module to keep this
+        file under the 800-line ratchet budget.
+        """
+        from .universe_result import build_result_payload
 
-        # 5. Build output
-        result = {
-            "schema_version": CANDIDATE_SCHEMA_VERSION,
-            "artifact_type": CANDIDATE_ARTIFACT_TYPE,
-            "model_identity": candidate_model_identity(),
-            "source_concepts_policy": source_concepts_policy(),
-            "market": CANDIDATE_MARKET,
-            "date": date_str,
-            "date_int": date_int,
-            "observation_date": date_int,
-            "data_cutoff": date_int,
-            "data_cutoff_semantics": "end_of_day",
-            "execution_not_before": "next_trading_session",
-            "future_data_included": False,
-            **_contract_evidence(date_int, ind_signal),
-            "source_mode": source_gate["source_mode"],
-            "fallback_reason": source_gate["fallback_reason"],
-            "source_gate": source_gate,
-            "topics": topics,
-            "candidate_universe": filtered,
-            "universe_size": len(filtered),
-            "config_snapshot": self._config_snapshot(),
-            "data_sources": _data_source_status(
-                {
-                    "ths_hot": ths,
-                    "dc_concept": dc,
-                    "dc_concept_cons": dc_cons,
-                    "kpl_concept_cons": kpl_cons,
-                    "kpl_list": kpl_list,
-                    "limit_step": limit_step,
-                    "limit_cpt_list": limit_cpt,
-                    "limit_list_ths": limit_list_ths,
-                    "hotspot_features": hf,
-                    "daily": daily,
-                    "daily_history": daily_history,
-                    "industry_signal": ind_signal,
-                },
-                source_gate,
-            ),
-            "quality_report": quality_report,
-            "outcome_report": outcome_report,
-        }
-        result = validate_candidate_result(result)
-        holdings_overlay = (
-            build_holdings_overlay(
-                candidate_result=result,
-                current_theme_candidates=ranked_stocks,
-                holdings_snapshot=holdings_snapshot,
-                daily_df=daily,
-                daily_history=daily_history,
-                min_amount_rank_pct=float(self.min_daily_amount_rank_pct),
-                min_price=float(self.min_price),
-                max_price=float(self.max_price),
-                allow_st=bool(self.max_st_allow),
-            )
-            if holdings_snapshot is not None
-            else None
-        )
-
-        # 6. Write output
-        return _write_universe_output(
-            result,
-            output_dir=output_dir,
-            config=self.config,
+        return build_result_payload(
+            date_int=date_int,
+            date_str=date_str,
+            frames=frames,
+            topics=topics,
+            filtered=filtered,
             topic_classification_lineage=topic_classification_lineage,
-            holdings_overlay=holdings_overlay,
+            config_snapshot=self._config_snapshot(),
         )

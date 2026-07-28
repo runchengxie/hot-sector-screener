@@ -151,7 +151,217 @@ def _collect_dimension_names() -> list[str]:
 # ── Main ML backtest ──
 
 
-def run_etf_ml_backtest(  # noqa: C901
+def _load_etf_backtest_data(
+    start_date: str,
+    end_date: str,
+) -> tuple[list[str], dict[str, pd.DataFrame], list[dict[str, Any]]]:
+    """Load ETF CSVs in range and run the data-quality check.
+
+    Returns (date_list, etf_data, quality_issues).
+    """
+    print("1. Loading ETF data...")
+    date_list = _build_date_list(start_date, end_date)
+    if not date_list:
+        return [], {}, []
+
+    etf_data: dict[str, pd.DataFrame] = {}
+    for sym in ETF_METADATA:
+        df = _load_etf_csv(sym)
+        if df is not None:
+            # Trim to backtest range
+            mask = (df["date"] >= pd.to_datetime(start_date)) & (
+                df["date"] <= pd.to_datetime(end_date)
+            )
+            df = df[mask]
+            if not df.empty:
+                etf_data[sym] = df.set_index("date").sort_index()
+
+    print(f"  Loaded {len(etf_data)} ETFs, {len(date_list)} trading days")
+
+    print("\n2. Data quality check...")
+    quality_issues = detect_suspicious_price_jumps(etf_data)
+    if quality_issues:
+        print(f"  ⚠ Found {len(quality_issues)} ETFs with suspicious price jumps:")
+        for issue in quality_issues[:3]:
+            print(
+                f"    {issue['symbol']}: {issue['worst_close_to_close_return_pct']:+.1f}% "
+                f"on {issue['worst_jump_date'].strftime('%Y-%m-%d')}"
+            )
+    return date_list, etf_data, quality_issues
+
+
+def _compute_tech_features(
+    etf_data: dict[str, pd.DataFrame],
+) -> dict[str, pd.DataFrame]:
+    """Pre-compute technical features for every eligible ETF."""
+    print("\n3. Computing technical features...")
+    tech_features: dict[str, pd.DataFrame] = {}
+    for sym, df in etf_data.items():
+        if df is not None and not df.empty and len(df) >= 60:
+            try:
+                tech_features[sym] = calculate_technical_features(df)
+            except Exception as e:
+                print(f"    Failed {sym}: {e}")
+    print(f"  Features computed for {len(tech_features)} ETFs")
+    return tech_features
+
+
+def _run_walk_forward_folds(  # noqa: C901
+    etf_data: dict[str, pd.DataFrame],
+    tech_features: dict[str, pd.DataFrame],
+    all_dates: list[pd.Timestamp],
+    params: dict[str, Any],
+    all_dims: list[str],
+    feat_cols: list[str],
+    *,
+    top_k: int,
+    fee_rate: float,
+    initial_capital: float,
+) -> tuple[list[dict[str, Any]], list[float], list[float], list[dict[str, Any]], float, float]:
+    """Run the walk-forward fold loop.
+
+    Returns (fold_results, all_ml_returns, all_baseline_returns, trade_log,
+    ml_nav, baseline_nav).
+    """
+    print("\n5. Running walk-forward backtest...")
+    fold_results: list[dict[str, Any]] = []
+    all_ml_returns: list[float] = []
+    all_baseline_returns: list[float] = []
+    trade_log: list[dict[str, Any]] = []
+    ml_nav = initial_capital
+    baseline_nav = initial_capital
+
+    fold_starts = list(
+        range(params["min_history_days"], len(all_dates), params["walk_forward_step_days"])
+    )
+    if fold_starts and fold_starts[-1] < len(all_dates) - 1:
+        fold_starts.append(len(all_dates) - 1)
+
+    print(f"  Folds: {len(fold_starts) - 1}")
+
+    for fold_idx in range(len(fold_starts) - 1):
+        fold_start_idx = fold_starts[fold_idx]
+        fold_end_idx = min(fold_starts[fold_idx + 1], len(all_dates) - 1)
+        train_cutoff = all_dates[fold_start_idx]
+        fold_test_dates = all_dates[fold_start_idx : fold_end_idx + 1]
+
+        print(
+            f"\n  Fold {fold_idx + 1}: train through {train_cutoff.strftime('%Y-%m-%d')}, "
+            f"test {len(fold_test_dates)} days"
+        )
+
+        train_data = build_training_data(
+            etf_data,
+            params=params,
+            train_end_date=train_cutoff,
+        )
+        if train_data is None:
+            print("    Skipping fold — insufficient training data")
+            continue
+
+        X_train, y_train, train_dates, _train_symbols = train_data
+        model, scores = train_model(X_train, y_train, train_dates, params=params)
+
+        fold_ic = (
+            scores.get("train", {}).get("mean_rank_ic", None) if isinstance(scores, dict) else None
+        )
+        if fold_ic is None:
+            try:
+                if hasattr(model, "predict"):
+                    train_preds = cast(_PredictModel, model).predict(X_train)
+                    ic_result = compute_daily_rank_ic(train_preds, y_train, train_dates)
+                    fold_ic = ic_result["mean_ic"]
+                else:
+                    fold_ic = 0.0
+            except Exception:
+                fold_ic = 0.0
+        print(f"    Model trained: {len(X_train)} samples, train IC={fold_ic:.4f}")
+
+        for test_date in fold_test_dates:
+            if test_date not in all_dates:
+                continue
+            date_idx = all_dates.index(test_date)
+            if date_idx + 2 >= len(all_dates):
+                continue
+
+            date_str = test_date.strftime("%Y-%m-%d")
+            concepts = _load_ths_hot_concepts(date_str)
+            if not concepts:
+                continue
+
+            concept_dims = _build_concept_features_per_date(concepts)
+            features_rows: dict[str, dict[str, float]] = {}
+            for sym in ETF_METADATA:
+                tech_feature_frame = tech_features.get(sym)
+                if tech_feature_frame is None:
+                    continue
+                feat_dict = _merge_features(
+                    sym, tech_feature_frame, concept_dims, test_date, all_dims
+                )
+                if feat_dict is not None:
+                    features_rows[sym] = feat_dict
+            if len(features_rows) < top_k:
+                continue
+
+            X_infer = pd.DataFrame.from_dict(features_rows, orient="index")
+            model_feat_cols = (
+                getattr(model, "feature_names", None)
+                if hasattr(model, "feature_names")
+                else feat_cols
+            )
+            X_infer = preprocess_inference_features(
+                X_infer,
+                feature_names=model_feat_cols,
+                cross_sectional_scaling=True,
+            )
+            if not hasattr(model, "predict"):
+                continue
+            predictions = cast(_PredictModel, model).predict(X_infer)
+            ranked = pd.Series(predictions, index=X_infer.index).sort_values(ascending=False)
+
+            selected_ml = ranked.head(top_k).index.tolist()
+            concept_scores = _score_etfs(concepts)
+            ranked_baseline = sorted(concept_scores.items(), key=lambda x: -x[1])
+            selected_baseline = [s for s, sc in ranked_baseline if sc > 0][:top_k]
+
+            entry_date = all_dates[date_idx + 1]
+            exit_date = all_dates[date_idx + 2]
+            ml_ret = _compute_portfolio_return(
+                selected_ml, entry_date, exit_date, etf_data, fee_rate
+            )
+            bl_ret = _compute_portfolio_return(
+                selected_baseline, entry_date, exit_date, etf_data, fee_rate
+            )
+
+            if ml_ret is not None:
+                all_ml_returns.append(ml_ret)
+                ml_nav *= 1 + ml_ret
+                trade_log.append(
+                    {
+                        "date": entry_date.strftime("%Y-%m-%d"),
+                        "fold": fold_idx + 1,
+                        "etfs": selected_ml,
+                        "return_pct": round(ml_ret * 100, 2),
+                    }
+                )
+            if bl_ret is not None:
+                all_baseline_returns.append(bl_ret)
+                baseline_nav *= 1 + bl_ret
+
+        fold_results.append(
+            {
+                "fold": fold_idx + 1,
+                "train_end": train_cutoff.strftime("%Y-%m-%d"),
+                "test_days": len(fold_test_dates),
+                "train_ic": round(fold_ic, 4),
+                "train_samples": len(X_train),
+            }
+        )
+
+    return fold_results, all_ml_returns, all_baseline_returns, trade_log, ml_nav, baseline_nav
+
+
+def run_etf_ml_backtest(
     start_date: str = "2024-10-14",
     end_date: str = "2026-04-30",
     top_k: int = 3,
@@ -196,48 +406,13 @@ def run_etf_ml_backtest(  # noqa: C901
     print(f"  Period: {start_date} to {end_date}")
     print(f"{'=' * 60}\n")
 
-    # 1. Load data
-    print("1. Loading ETF data...")
-    date_list = _build_date_list(start_date, end_date)
+    # 1-2. Load data and quality check
+    date_list, etf_data, _quality_issues = _load_etf_backtest_data(start_date, end_date)
     if not date_list:
         return {"error": "No trading dates in range"}
 
-    etf_data: dict[str, pd.DataFrame] = {}
-    for sym in ETF_METADATA:
-        df = _load_etf_csv(sym)
-        if df is not None:
-            # Trim to backtest range
-            mask = (df["date"] >= pd.to_datetime(start_date)) & (
-                df["date"] <= pd.to_datetime(end_date)
-            )
-            df = df[mask]
-            if not df.empty:
-                etf_data[sym] = df.set_index("date").sort_index()
-
-    print(f"  Loaded {len(etf_data)} ETFs, {len(date_list)} trading days")
-
-    # 2. Data quality check
-    print("\n2. Data quality check...")
-    quality_issues = detect_suspicious_price_jumps(etf_data)
-    if quality_issues:
-        print(f"  ⚠ Found {len(quality_issues)} ETFs with suspicious price jumps:")
-        for issue in quality_issues[:3]:
-            print(
-                f"    {issue['symbol']}: {issue['worst_close_to_close_return_pct']:+.1f}% "
-                f"on {issue['worst_jump_date'].strftime('%Y-%m-%d')}"
-            )
-
     # 3. Pre-compute technical features for all ETFs
-    print("\n3. Computing technical features...")
-    tech_features: dict[str, pd.DataFrame] = {}
-    for sym, df in etf_data.items():
-        if df is not None and not df.empty and len(df) >= 60:
-            try:
-                tech_features[sym] = calculate_technical_features(df)
-            except Exception as e:
-                print(f"    Failed {sym}: {e}")
-
-    print(f"  Features computed for {len(tech_features)} ETFs")
+    tech_features = _compute_tech_features(etf_data)
 
     # 4. Build walk-forward folds
     print("\n4. Building walk-forward folds...")
@@ -254,178 +429,32 @@ def run_etf_ml_backtest(  # noqa: C901
             "cross_sectional_feature_scaling": True,
             "label_mode": "next_open_to_open",
             "linear_rank_alpha": 10.0,
+            "walk_forward_step_days": walk_forward_step_days,
         }
     )
 
-    # Collect all dimension names for consistent feature columns
     all_dims = _collect_dimension_names()
     feat_cols = resolve_feature_columns("small_pool")
 
     # 5. Walk-forward backtest
-    print("\n5. Running walk-forward backtest...")
-    fold_results: list[dict] = []
-    all_ml_returns: list[float] = []
-    all_baseline_returns: list[float] = []
-    trade_log: list[dict] = []
-    ml_nav = initial_capital
-    baseline_nav = initial_capital
-
-    # Walk forward: sliding window of step_days
-    fold_starts = list(range(min_train_days, len(all_dates), walk_forward_step_days))
-    if fold_starts and fold_starts[-1] < len(all_dates) - 1:
-        fold_starts.append(len(all_dates) - 1)
-
-    print(f"  Folds: {len(fold_starts) - 1}")
-
-    for fold_idx in range(len(fold_starts) - 1):
-        fold_start_idx = fold_starts[fold_idx]
-        fold_end_idx = min(fold_starts[fold_idx + 1], len(all_dates) - 1)
-        train_cutoff = all_dates[fold_start_idx]
-        fold_test_dates = all_dates[fold_start_idx : fold_end_idx + 1]
-
-        print(
-            f"\n  Fold {fold_idx + 1}: train through {train_cutoff.strftime('%Y-%m-%d')}, "
-            f"test {len(fold_test_dates)} days"
-        )
-
-        # Train model on data up to train_cutoff
-        train_data = build_training_data(
-            etf_data,
-            params=params,
-            train_end_date=train_cutoff,
-        )
-
-        if train_data is None:
-            print("    Skipping fold — insufficient training data")
-            continue
-
-        X_train, y_train, train_dates, _train_symbols = train_data
-
-        # Temporal split for validation within training window
-        model, scores = train_model(
-            X_train,
-            y_train,
-            train_dates,
-            params=params,
-        )
-
-        # Extract fold IC — linear_rank returns it in scores, LGBM needs manual compute
-        fold_ic = (
-            scores.get("train", {}).get("mean_rank_ic", None) if isinstance(scores, dict) else None
-        )
-        if fold_ic is None:
-            # LGBM (or other models) — compute rank IC from training predictions
-            try:
-                if hasattr(model, "predict"):
-                    train_preds = cast(_PredictModel, model).predict(X_train)
-                    ic_result = compute_daily_rank_ic(train_preds, y_train, train_dates)
-                    fold_ic = ic_result["mean_ic"]
-                else:
-                    fold_ic = 0.0
-            except Exception:
-                fold_ic = 0.0
-        print(f"    Model trained: {len(X_train)} samples, train IC={fold_ic:.4f}")
-
-        # Predict on fold test dates
-        for _i, test_date in enumerate(fold_test_dates):
-            if test_date not in all_dates:
-                continue
-            date_idx = all_dates.index(test_date)
-            if date_idx + 2 >= len(all_dates):
-                continue
-
-            date_str = test_date.strftime("%Y-%m-%d")
-
-            # Get concepts for this date
-            concepts = _load_ths_hot_concepts(date_str)
-            if not concepts:
-                continue
-
-            concept_dims = _build_concept_features_per_date(concepts)
-
-            # Build feature vectors for all ETFs (technical features only)
-            features_rows: dict[str, dict[str, float]] = {}
-            for sym in ETF_METADATA:
-                tech_feature_frame = tech_features.get(sym)
-                if tech_feature_frame is None:
-                    continue
-                feat_dict = _merge_features(
-                    sym, tech_feature_frame, concept_dims, test_date, all_dims
-                )
-                if feat_dict is not None:
-                    features_rows[sym] = feat_dict
-
-            if len(features_rows) < top_k:
-                continue
-
-            # Predict with model — use model's own feature names for consistency
-            X_infer = pd.DataFrame.from_dict(features_rows, orient="index")
-            # Keep only the feature columns the model was trained on
-            model_feat_cols = (
-                getattr(model, "feature_names", None)
-                if hasattr(model, "feature_names")
-                else feat_cols
-            )
-            X_infer = preprocess_inference_features(
-                X_infer,
-                feature_names=model_feat_cols,
-                cross_sectional_scaling=True,
-            )
-
-            if hasattr(model, "predict"):
-                predictions = cast(_PredictModel, model).predict(X_infer)
-            else:
-                continue
-
-            pred_series = pd.Series(predictions, index=X_infer.index)
-            ranked = pred_series.sort_values(ascending=False)
-
-            # ML selection: top K ETFs by model score
-            selected_ml = ranked.head(top_k).index.tolist()
-
-            # Baseline selection: top K ETFs by concept score
-            concept_scores = _score_etfs(concepts)
-            ranked_baseline = sorted(concept_scores.items(), key=lambda x: -x[1])
-            selected_baseline = [s for s, sc in ranked_baseline if sc > 0][:top_k]
-
-            # Compute next-day return for ML selection
-            entry_idx = date_idx + 1
-            exit_idx = date_idx + 2
-            entry_date = all_dates[entry_idx]
-            exit_date = all_dates[exit_idx]
-
-            ml_ret = _compute_portfolio_return(
-                selected_ml, entry_date, exit_date, etf_data, fee_rate
-            )
-            bl_ret = _compute_portfolio_return(
-                selected_baseline, entry_date, exit_date, etf_data, fee_rate
-            )
-
-            if ml_ret is not None:
-                all_ml_returns.append(ml_ret)
-                ml_nav *= 1 + ml_ret
-                trade_log.append(
-                    {
-                        "date": entry_date.strftime("%Y-%m-%d"),
-                        "fold": fold_idx + 1,
-                        "etfs": selected_ml,
-                        "return_pct": round(ml_ret * 100, 2),
-                    }
-                )
-
-            if bl_ret is not None:
-                all_baseline_returns.append(bl_ret)
-                baseline_nav *= 1 + bl_ret
-
-        fold_results.append(
-            {
-                "fold": fold_idx + 1,
-                "train_end": train_cutoff.strftime("%Y-%m-%d"),
-                "test_days": len(fold_test_dates),
-                "train_ic": round(fold_ic, 4),
-                "train_samples": len(X_train),
-            }
-        )
+    (
+        fold_results,
+        all_ml_returns,
+        all_baseline_returns,
+        trade_log,
+        _ml_nav,
+        _baseline_nav,
+    ) = _run_walk_forward_folds(
+        etf_data,
+        tech_features,
+        all_dates,
+        params,
+        all_dims,
+        feat_cols,
+        top_k=top_k,
+        fee_rate=fee_rate,
+        initial_capital=initial_capital,
+    )
 
     # 6. Build results
     print("\n6. Computing metrics...")
@@ -440,17 +469,14 @@ def run_etf_ml_backtest(  # noqa: C901
         effective_trials=1,
     )
 
-    # CSI 300 benchmark
     bm_data = None
     for sym in ("159919", "510300"):
         df = etf_data.get(sym)
         if df is not None and not df.empty:
             bm_data = df
             break
-
     bm_total = _compute_benchmark(bm_data, start_date, end_date)
 
-    # ETF selection frequency
     etf_counter: Counter[str] = Counter()
     for t in trade_log:
         for s in t["etfs"]:
