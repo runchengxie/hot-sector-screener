@@ -1,5 +1,11 @@
 # hot-sector-screener
 
+> **Retired / 已退役**
+>
+> Candidate recipes and explicit-input research now belong to [quant-research](https://github.com/runchengxie/quant-research); reusable accounting and portfolio mechanisms belong to [quant-platform](https://github.com/runchengxie/quant-platform), with input governance in [quant-market-data-platform](https://github.com/runchengxie/quant-market-data-platform).
+>
+> 候选池配方与显式输入研究由上述后继仓库维护。[热点研究专题](https://runchengxie.github.io/quant-market-research/research/hotsector/) 展示公开证据。历史回测引擎和命令保留用于复现，不再作为维护入口。合成数据集成验证不代表收益有效性，候选池也不等于最终持仓。新入口保留 LLM 仅压缩主题、确定性规则负责候选映射的边界。
+
 A 股热点题材候选池筛选器。使用最近一个已完整收盘交易日的同花顺热榜、东财概念板块、开盘啦概念成分、ETF 轮动信号等多来源数据，生成 50-100 只股票的下一交易时段盯盘候选池。这个池子交给后续的选股流程进一步筛选使用。
 
 职责边界：LLM 只压缩信息并输出主题分类。`topic → stock` 候选池由确定性规则生成。本仓库不提供 LLM 直接选股、AI 精选文案或对应推送入口，这些能力由下游 `ai-stock-picker` 负责。
